@@ -1,0 +1,48 @@
+You are an expert full-stack engineer building the "Friday Food Club" application (Expo mobile, React-Vite portal, Express/TypeScript API, Neo4j Aura). 
+
+We have completed the backend infrastructure and web portal, but need you to close all remaining mobile and integration gaps. Execute the following tasks in exact order:
+
+### PHASE 1: CRITICAL BLOCKERS (Fix First)
+
+1. **Club Pass Purchase Screen & Payment (Mobile):**
+   - Create `artifacts/mobile/app/club-pass.tsx`.
+   - Fetch club pass price dynamically from backend config endpoint.
+   - Build a clean payment UI matching the obsidian/gold aesthetic. Wire the CTA to call `POST /subscriptions` and handle success state by updating the `AuthContext` to reflect an active club pass.
+   - Add a basic mock/live payment guard flag so subscriptions require a verified checkout state before becoming `ACTIVE`.
+
+2. **GPS Proximity & Location Feed (Backend & Mobile):**
+   - Update `User` and `Chef` database models to include `lat: float` and `lon: float` fields.
+   - Update `POST /auth/register` and user profile updates to accept and save user coordinates.
+   - Create a new backend route `GET /drops?lat=X&lon=Y&radius=Z` using Neo4j spatial calculations to sort and filter active drops by proximity distance.
+   - In the mobile app, prompt for `expo-location` permissions on app launch and pass coordinates to the drop feed query.
+
+3. **Mobile Studio Drop Posting Integration:**
+   - Wire the mobile Studio drop creation screen (`app/(tabs)/studio/new.tsx`) directly to `POST /drops` with proper authentication headers.
+   - Before showing the form, verify the chef's wallet freeze status via `GET /chefs/me/wallet`. If frozen (`isFrozen: true`), block the form and display a warning banner stating they must settle their cash debt before launching new drops.
+
+---
+
+### PHASE 2: IMPORTANT FEATURES & POLISH (Fix Second)
+
+4. **Chef Mobile Wallet Screen:**
+   - Create `artifacts/mobile/app/wallet.tsx`.
+   - Call `GET /chefs/me/wallet` and display `walletBalance`, `isFrozen` warning badges, `cashDebt`, `totalEarnings`, and the list of `AdminCredit` history items.
+
+5. **Chef Re-Application Workflow:**
+   - Modify `POST /chefs/apply` backend route so that chefs with a `REJECTED` status can submit a new application and update their uploaded Food Badge/ID documents.
+   - On the mobile status screen, add a "Resubmit Application" CTA if rejected.
+
+6. **Mobile Obsidian & Gold Theme System:**
+   - Create `artifacts/mobile/constants/theme.ts` defining `OBSIDIAN = '#0A0A0A'`, `GOLD = '#D4AF37'`, and `CRIMSON = '#C41E3A'`.
+   - Apply this luxury aesthetic consistently across mobile drop cards, feed backgrounds, headers, tab bars, and checkout flows using NativeWind or StyleSheet.
+
+7. **Deep-Linking on Push Notifications:**
+   - Add an Expo `Linking` event handler in `artifacts/mobile/app/_layout.tsx` to handle push notification tap data payloads: route approved chefs to `ffc://studio` and rejected applicants back to `ffc://apply-chef`.
+
+8. **Checkout Discount Confirmation:**
+   - In the mobile order checkout flow, check if `isMemberOrder=true`. If active, render a prominent gold badge reading: *"Club Pass discount applied — you saved TTD [X]"*.
+
+9. **AI Marketing Generator on Mobile:**
+   - Add a "Generate with AI" button inside the mobile Studio new-drop form that calls `POST /ai/marketing` using the chef's raw text notes and populates the title/description fields automatically.
+
+Run through these tasks systematically, update the relevant files across API and mobile packages, and verify there are no compilation errors.

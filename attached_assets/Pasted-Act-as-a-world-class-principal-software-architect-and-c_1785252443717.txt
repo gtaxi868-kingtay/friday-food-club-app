@@ -1,0 +1,39 @@
+Act as a world-class principal software architect and cultural engineer. Build a complete, production-ready, zero-cost-infrastructure web and mobile application ecosystem for "Friday Food Club"—a secret chef menu marketplace and cultural movement starting in Trinidad.
+
+### BRAND & VIBE IDENTITY:
+- Visual Aesthetic: Luxury gold (#D4AF37), deep red, and dark charcoal backgrounds, matching the provided brand assets (metallic NFC membership cards, gold coins, Top Chef trophies, and custom medallions).
+- Emotional Core: "Drop culture" for food. High-energy, exclusive, anti-establishment, community-driven, and hyper-focused on secret chef menus across all day-parts.
+
+### COMPLETE TECH STACK:
+- Frontend & Dashboards: Next.js (Web - including User App, Chef Portal, and Admin Dashboard routes) + React Native/Expo (Mobile App), styled with the luxury gold and dark charcoal theme.
+- Database: Neo4j Aura Free Tier to map the entire social and operational graph (Users, Chefs, Secret Menus, Meal Categories, Orders, WhatsApp shares, NFC taps, and Trinidad regional pathways).
+- Backend/Edge: Cloudflare Workers handling serverless routing, secure state transitions, instant drop notifications, and WhatsApp webhook integrations with zero cold-start latency.
+- AI Integration: Open-source LLM API integration (e.g., Hugging Face/Mistral free tier) to automatically transform raw chef menu inputs into high-urgency, culturally resonant WhatsApp broadcast copy.
+
+### MANDATORY MODULES TO CODE:
+
+1. THE USER APP (Consumer Interface & Multi-Meal Discovery):
+   - Dynamic Day-Part Feed: Filterable tabs/views for **Breakfast, Lunch, and Dinner** secret menu drops.
+   - High-velocity social feed displaying active and upcoming drops with real-time countdown timers.
+   - Built-in "Share to WhatsApp" deep links with pre-formatted FOMO text tailored to the specific meal category.
+   - NFC Membeprint integration route for scanning digital/metallic cards to unlock secret menus.
+   - Micro-batch pre-order checkout flow.
+
+2. THE CHEF PORTAL (Creator Studio):
+   - Secure login for verified chefs and community home cooks.
+   - Multi-Meal Drop Builder: Form to select meal category (**Breakfast | Lunch | Dinner**), input secret menu name, description, custom pricing, pickup location, fulfillment time window, and minimum order threshold (e.g., 15 orders to unlock).
+   - Live Order Queue & Threshold Progress Bar (visualizing progress toward the drop unlock).
+   - Digital Wallet Dashboard tracking earnings, payouts, and history.
+
+3. THE ADMIN DASHBOARD (Control Room):
+   - Chef Verification Queue: Approve or reject new home cook and professional chef applications.
+   - Drop Management: Global view of all active, pending, and completed secret drops categorized by meal slot (Breakfast, Lunch, Dinner) with override controls.
+   - Financial & Escrow Oversight: Monitor micro-batch funds, view platform cut, and manage wallet disbursements.
+   - Top Chef & Gamification Panel: Manage leaderboards, community voting tallies, and allocate weekly cash prize pools.
+
+4. THE BACKEND & DATABASE LOGIC (Neo4j & Cloudflare):
+   - Cypher schema handling relationships: (:Chef)-[:POSTED]->(:SecretMenu {category: "BREAKFAST|LUNCH|DINNER"})<-[:PURCHASED]-(:User).
+   - Automated threshold state-machine: When orders reach the minimum threshold, automatically switch drop status from "Pending" to "Unlocked/Confirmed" and trigger meal-specific notifications.
+
+### EXECUTION STANDARD:
+Write clean, modular, production-ready code with strict role-based access control (RBAC) separating Users, Chefs, and Admins, secure wallet management, seamless edge routing, and a relentless focus on maintaining high cultural energy and smooth user flow across all three daily meal slots.

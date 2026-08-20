@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/portal/"
+title = "Friday Food Club — Creator & Admin Portal"
+description = "Internal web portal for Friday Food Club with two surfaces: a Creator Portal where verified chefs post secret drops, set inventory limits, and track real-time payout earnings; and an Admin Control Room where operators manage platform fees, member discounts, chef verification, and see live revenue stats."
+version = "1.0.0"
+id = "artifacts/portal"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/portal/" ]
+localPort = 25265
+
+[services.development]
+run = "pnpm --filter @workspace/portal run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/portal", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/portal/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25265"
+BASE_PATH = "/portal/"

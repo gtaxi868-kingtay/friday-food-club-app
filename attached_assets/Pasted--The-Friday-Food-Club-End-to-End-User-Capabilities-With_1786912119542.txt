@@ -1,0 +1,27 @@
+## The Friday Food Club: End-to-End User Capabilities
+
+With the implementation complete, compiled, and verified across the API server, database models, and mobile application packages, the Friday Food Club platform is fully operational. Working backward from the user experience, here is exactly what buyers and creators can now accomplish on the platform:
+
+---
+
+### 1. What Buyers Can Do
+
+* **Manage Subscriptions Directly on Mobile:** Buyers can view their subscription status and interact with the **Club Pass** natively through the mobile profile screen, bridging the gap between backend subscription records and the user interface.
+* **Unlock Member Pricing:** When browsing drops, active subscribers instantly see a gold member-pricing badge on item pages, reflecting automated discounts applied at checkout.
+* **Seamless Navigation:** The app maintains persistent authentication via encrypted tokens stored securely in AsyncStorage, ensuring a smooth experience across feeds, orders, and profile views.
+
+---
+
+### 2. What Chefs & Creators Can Do
+
+* **Complete Mobile Onboarding & Re-application:** Aspiring chefs can submit their Food Badge and National ID through a guided 4-step mobile flow. If an application is rejected, they can update and resubmit their documents directly.
+* **Launch Drops via the Mobile Studio:** Verified chefs can bypass placeholders and use the dedicated `create-drop` mobile screen to publish new menu items with full field support, hard inventory limits, and pricing.
+* **Leverage the AI Marketing Assistant:** Chefs can type casual, raw notes describing their daily dish (e.g., stewed pork and ground provisions) and tap the AI assistant button to instantly generate mouth-watering titles, descriptions, and promotional tags via the backend OpenAI integration.
+* **Track Wallet Balances & Cash Ledger:** Chefs have mobile visibility into their live wallet balances, earnings, cash-on-pickup debt tracking, and admin credit history. The system automatically restricts drop creation if a chef's cash fee balance exceeds the freeze threshold.
+
+---
+
+### 3. System & Notification Architecture
+
+* **Smart Push Notification Routing:** When an administrator approves or rejects a chef application, the system fires an Expo push notification. Tapping the notification automatically deep-links the user to the correct screen (routing approved chefs straight to the Studio and rejected applicants back to the application form).
+* **Robust Security & Escrow Control:** All API endpoints enforce strict role-based access control (`BUYER`, `CHEF`, `ADMIN`), ensuring secure data isolation, atomic inventory updates, and accurate tracking of digital escrow versus cash-on-pickup transactions.

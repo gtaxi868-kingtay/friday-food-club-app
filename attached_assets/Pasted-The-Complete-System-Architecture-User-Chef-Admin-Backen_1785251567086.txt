@@ -1,0 +1,55 @@
+The Complete System Architecture (User + Chef + Admin + Backend)
+
+To make Friday Food Club function as a real-world, automated enterprise in Trinidad, the codebase must include three distinct interfaces sharing the same Neo4j graph database:
+
+    The User App (The Consumer Front): The TikTok-style drop feed, WhatsApp share engine, NFC Membeprint tap-to-unlock, and micro-batch pre-order checkout.
+
+    The Chef Portal (The Creator Studio): Where professional chefs and home cooks log in, submit secret menus, set minimum order thresholds, monitor live order counts, and view their digital wallet balances.
+
+    The Admin Dashboard (The Control Room): Your master command center to verify new cooks, oversee active drops, trigger or override micro-batch unlocks, manage the weekly Top Chef cash prize pool, and view real-time platform analytics.
+
+    The Edge Backend (The Engine): Cloudflare Workers managing secure routing, webhook triggers, and automated state transitions when an order threshold is met.
+
+The Updated Titan Master Prompt for Replit / Claude Code
+
+Copy and paste this comprehensive prompt directly into Replit Agent or your Claude Code terminal. It forces the AI to build the backend, admin side, chef portal, and user app in one unified codebase:
+Markdown
+
+Act as a world-class principal software architect and cultural engineer. Build a complete, production-ready, zero-cost-infrastructure web and mobile application ecosystem for "Friday Food Club"—a secret chef menu marketplace and cultural movement starting in Trinidad.
+
+### BRAND & VIBE IDENTITY:
+- Visual Aesthetic: Luxury gold (#D4AF37), deep red, and dark charcoal backgrounds, matching the provided brand assets (metallic NFC membership cards, gold coins, Top Chef trophies, and custom medallions).
+- Emotional Core: "Drop culture" for food. High-energy, exclusive, anti-establishment, community-driven, and hyper-focused on secret chef menus.
+
+### COMPLETE TECH STACK:
+- Frontend & Dashboards: Next.js (Web - including User, Chef Portal, and Admin Dashboard routes) + React Native/Expo (Mobile App), styled with the exact luxury gold and dark charcoal theme.
+- Database: Neo4j Aura Free Tier to map the entire social and operational graph (Users, Chefs, Secret Menus, Orders, WhatsApp shares, NFC taps, and Trinidad regional culinary pathways).
+- Backend/Edge: Cloudflare Workers handling serverless routing, secure state transitions, instant drop notifications, and WhatsApp webhook integrations with zero cold-start latency.
+- AI Integration: Open-source LLM API integration (e.g., Hugging Face/Mistral free tier) to automatically transform raw chef menu inputs into high-urgency, culturally resonant WhatsApp broadcast copy.
+
+### MANDATORY MODULES TO CODE:
+
+1. THE USER APP (Consumer Interface):
+   - High-velocity social feed displaying active and upcoming secret menu drops.
+   - Built-in "Share to WhatsApp" deep links with pre-formatted FOMO text.
+   - NFC Membeprint integration route for scanning digital/metallic cards to unlock secret menus.
+   - Micro-batch pre-order checkout flow.
+
+2. THE CHEF PORTAL (Creator Studio):
+   - Secure login for verified chefs and community home cooks.
+   - Drop Builder: Form to input secret menu name, description, custom pricing, pickup location, and minimum order threshold (e.g., 15 orders to unlock).
+   - Live Order Queue & Threshold Progress Bar (visualizing progress toward the drop unlock).
+   - Digital Wallet Dashboard tracking earnings, payouts, and history.
+
+3. THE ADMIN DASHBOARD (Control Room):
+   - Chef Verification Queue: Approve or reject new home cook and professional chef applications.
+   - Drop Management: Global view of all active, pending, and completed secret drops with override controls.
+   - Financial & Escrow Oversight: Monitor micro-batch funds, view platform cut, and manage wallet disbursements.
+   - Top Chef & Gamification Panel: Manage leaderboards, community voting tallies, and allocate weekly cash prize pools.
+
+4. THE BACKEND & DATABASE LOGIC (Neo4j & Cloudflare):
+   - Cypher schema handling relationships: (:Chef)-[:POSTED]->(:SecretMenu)<-[:PURCHASED]-(:User).
+   - Automated threshold state-machine: When orders reach the minimum threshold, automatically switch drop status from "Pending" to "Unlocked/Confirmed" and trigger notifications.
+
+### EXECUTION STANDARD:
+Write clean, modular, production-ready code with strict role-based access control (RBAC) separating Users, Chefs, and Admins, secure wallet management, seamless edge routing, and a relentless focus on maintaining high cultural energy and smooth user flow.

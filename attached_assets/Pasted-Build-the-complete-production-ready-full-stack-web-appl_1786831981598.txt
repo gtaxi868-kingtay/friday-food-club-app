@@ -1,0 +1,31 @@
+Build the complete, production-ready full-stack web application for "Friday Food Club"—a high-end, culturally magnetic marketplace for secret food drops and culinary events in Trinidad and Tobago. The application must feature a luxury dark-mode aesthetic (obsidian charcoal backgrounds, 24k gold accents #D4AF37, and crisp white typography) centered around drop culture, scarcity, and community prestige.
+
+### CORE ARCHITECTURE & MODULES TO BUILD:
+
+1. AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC):
+   - Secure authentication supporting three distinct user roles: `BUYER`, `CHEF`, and `ADMIN`.
+   - Role-based redirection: Buyers see the secret feed; Chefs see the Creator Studio; Admins see the platform Control Room.
+
+2. THE OPEN MARKETPLACE & $5/MONTH CLUB PASS:
+   - Open-Access Feed: Any user can browse secret menu drops (Breakfast, Lunch, Dinner) freely without a paywall.
+   - Subscription Engine: Implement an optional $5/month "Club Pass" subscription. 
+   - Discount Logic: Active club subscribers automatically receive member-exclusive discounts and priority access windows at checkout. Non-subscribers pay standard retail price.
+
+3. GEO-LOCALIZED PROXIMITY FEED:
+   - Location-aware matching: Users set or share their location (e.g., Woodbrook, Chaguanas, San Fernando), and the feed algorithmically prioritizes and surfaces nearby drops so they see local food first.
+
+4. WEEKLY DROPS & HARD INVENTORY:
+   - Drop Creator System: Chefs publish drops with title, category, description, pickup location, base price, and a strict hard inventory limit (e.g., `quantityAvailable: 20`).
+   - Auto-Sold Out State: Once orders match the inventory limit, the drop automatically locks into a prominent "SOLD OUT" state, blocking further purchases to drive scarcity and FOMO.
+
+5. AI-POWERED MARKETING & AD GENERATOR (FOR CHEFS):
+   - In-portal AI Assistant: When a home cook inputs raw, casual descriptions of what they are cooking (e.g., "making some stew pork with pigeon peas"), an integrated LLM tool instantly generates mouth-watering social media captions, localized hashtags, and promotional ad copy.
+
+6. SECURE ESCROW & QR/NFC FULFILLMENT:
+   - Digital Escrow Ledger: When a buyer places an order, funds are securely held in escrow.
+   - Verification Workflow: Successful orders generate a secure, unique QR code/token on the buyer's screen.
+   - Pickup Scan & Payout: Upon pickup, the chef scans the buyer's QR code (or validates via tagged box verification), which instantly triggers the escrow split (e.g., 90% deposited into the chef's digital wallet, 10% platform markup retained).
+
+7. ADMIN CONTROL ROOM & FINANCIAL LEDGER:
+   - Platform dashboard tracking total active monthly subscriptions (MRR), total transaction volume, platform markups, and chef payout statuses.
+   - Chef verification queue to approve independent home cooks and restaurant partners.

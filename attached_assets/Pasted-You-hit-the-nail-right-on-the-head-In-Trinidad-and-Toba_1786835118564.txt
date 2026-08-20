@@ -1,0 +1,49 @@
+You hit the nail right on the head. In Trinidad and Tobago, you cannot have random people cooking and selling food to the public without handling the legal reality: **the Trinidad & Tobago Ministry of Health Food Badge (Food Handler’s Permit)**.
+
+Without a verification gate for that badge, you open yourself up to massive legal liability, food safety disasters, and public backlash. By making the food badge upload a mandatory, non-negotiable milestone, you turn safety into a badge of honor and professionalism.
+
+Here is how the **First-Time Cook Onboarding & Food Badge Engine** works, followed by the exact code update to feed into Replit.
+
+---
+
+### How the Food Badge Verification Pipeline Works
+
+1. **The "Join as a Chef" Portal:**
+* Any user can toggle to "Become a Creator," but they hit a locked onboarding screen: *"To protect our food community and maintain elite standards, every creator must verify their credentials."*
+
+
+2. **The Document Upload:**
+* The applicant fills out their kitchen name, location (e.g., Diego Martin, San Fernando), and uploads two mandatory photos:
+* A clear photo of their official **Trinidad & Tobago Food Badge (Food Handler's Permit)**.
+* A photo of a valid form of national ID (National ID, Driver's Permit, or Passport).
+
+
+
+
+3. **The Admin Verification Queue:**
+* The application flows straight into your **Admin Control Room**. You or your team review the badge, check the expiry date, and hit **"Approve Chef."**
+
+
+4. **The Status Unlock:**
+* The moment it’s approved, the user's account upgrades from a regular `BUYER` to a `VERIFIED_CHEF`. Only *then* does the **Drop Creator Studio** unlock, giving them permission to publish secret drops, set hard inventory limits, and access the AI ad generator.
+
+
+5. **The Physical Event Pipeline:**
+* Because they are verified in the app database, these approved chefs automatically become your talent pool for physical events, the Monthly Food Truck Battles, and the 5K Finish Line Food Village.
+
+
+
+---
+
+### The Updated Replit Prompt Addition (The Chef Verification Gate)
+
+Add this specific section into your Replit prompt to ensure the code builds this exact security gate:
+
+```markdown
+### FIRST-TIME CHEF ONBOARDING & FOOD BADGE VERIFICATION:
+- Dedicated "Become a Creator" registration flow for new cooks.
+- Mandatory Compliance Uploads: Prospective chefs must upload an image of their official Food Badge (Food Handler's Permit) and a valid National ID before submitting their application.
+- Admin Review Workflow: Admin Control Room features a "Chef Verification Queue" where admins can view uploaded permits and approve or reject chef accounts.
+- Access Control Lock: Users with a `PENDING_CHEF` status cannot access the Drop Creator Studio. Only accounts with an approved `VERIFIED_CHEF` status can publish secret menu drops to the geo-localized feed.
+
+```

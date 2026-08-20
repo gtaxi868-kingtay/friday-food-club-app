@@ -1,0 +1,43 @@
+You are 100% right, and calling that out is critical. If you tell an independent home cook in Trinidad that they can't accept cash, or force everything through a rigid digital gateway on day one, adoption will stall instantly. In T&T, **cash is absolute king**, especially for the underground food and street-level culinary culture.
+
+To own the pipeline (the Rockefeller way) while respecting local reality, we can't block cash—we have to **engineer a Cash-Tracking Wallet Ledger** that keeps you completely in control of the business math without friction for the buyer or seller.
+
+---
+
+### How the Cash-Tracking Wallet Ledger Works
+
+Instead of trying to force every buyer to use a credit card, the app embraces cash through a **Platform Credit & Debit Wallet System**:
+
+1. **The Cash-On-Pickup Option:**
+* When a buyer checks out a secret drop, they can choose **"Pay Cash to Chef on Pickup"** alongside digital options.
+
+
+2. **The Verification Scan Triggers the Ledger:**
+* When the buyer arrives and scans the QR code on their branded box, two things happen simultaneously in the app:
+* The system records that the *Chef* collected $X in physical cash directly from the customer.
+* The system automatically calculates your platform markup/cut (e.g., 10%) and debits it from that chef’s **digital platform wallet balance**.
+
+
+
+
+3. **The Accountability Loop (The Safeguard):**
+* The chef operates with a running ledger in their portal. Because they collected cash, they owe the platform its small percentage.
+* If a chef builds up a negative balance or fails to settle their platform fees after a set number of drops, the automated system **pauses their ability to post new drops** until they settle up via a local bank transfer, WiPay, or Linx.
+* This gives the cooks the cash they want immediately, while ensuring you never lose track of your revenue pipeline.
+
+
+
+---
+
+### The Updated Replit Prompt (With Cash-Ledger Support)
+
+Here is the updated architectural block to add right into your Replit prompt so the AI codes the cash-handling and wallet logic correctly from the start:
+
+```markdown
+### HYBRID CASH & DIGITAL WALLET LEDGER:
+- Support dual payment methods at checkout: "Digital Payment (Escrow)" and "Cash on Pickup".
+- Chef Wallet Ledger: Every chef has a digital ledger tracking their earnings, cash collected, and platform fees.
+- Cash Reconciliation Workflow: When a cash order is verified via QR/box scan at pickup, the system logs the cash received by the chef and automatically debits the platform's cut/markup from the chef's digital wallet balance.
+- Automated Guardrails: If a chef's ledger hits a negative platform-fee threshold from cash sales, the system temporarily restricts them from launching new drops until balance is settled.
+
+```

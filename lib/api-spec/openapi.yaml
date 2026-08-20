@@ -1,0 +1,1301 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Friday Food Club API — drops, orders, chefs, admin, subscriptions
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: drops
+    description: Secret food drops
+  - name: orders
+    description: Pre-orders
+  - name: chefs
+    description: Chef profiles
+  - name: admin
+    description: Admin control room
+  - name: subscriptions
+    description: Club Pass subscriptions
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── Drops ──────────────────────────────────────────────────────────────────
+
+  /drops:
+    get:
+      operationId: listDrops
+      tags: [drops]
+      summary: List active drops
+      parameters:
+        - in: query
+          name: mealSlot
+          schema:
+            type: string
+            enum: [Breakfast, Lunch, Dinner]
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: chefId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of drops
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DropList"
+    post:
+      operationId: createDrop
+      tags: [drops]
+      summary: Chef creates a new drop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DropInput"
+      responses:
+        "201":
+          description: Drop created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Drop"
+
+  /drops/{id}:
+    get:
+      operationId: getDrop
+      tags: [drops]
+      summary: Get a single drop
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Drop detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Drop"
+
+  /drops/{id}/status:
+    patch:
+      operationId: updateDropStatus
+      tags: [drops]
+      summary: Override drop status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DropStatusUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DropStatusResult"
+
+  # ── Orders ─────────────────────────────────────────────────────────────────
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List orders
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+        - in: query
+          name: dropId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderList"
+    post:
+      operationId: placeOrder
+      tags: [orders]
+      summary: Place a pre-order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Order placed with inventory state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResult"
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get a single order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Order detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderDetail"
+
+  /orders/{id}/cancel:
+    patch:
+      operationId: cancelOrder
+      tags: [orders]
+      summary: Cancel a pending order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelResult"
+
+  # ── Chefs ──────────────────────────────────────────────────────────────────
+
+  /chefs:
+    get:
+      operationId: listChefs
+      tags: [chefs]
+      summary: List verified chefs
+      responses:
+        "200":
+          description: Chef list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChefList"
+
+  /chefs/{id}:
+    get:
+      operationId: getChef
+      tags: [chefs]
+      summary: Chef profile + active drops
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chef detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChefDetail"
+
+  /chefs/me/status:
+    get:
+      operationId: getChefStatus
+      tags: [chefs]
+      summary: Current user's chef verification status
+      responses:
+        "200":
+          description: Verification status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChefVerificationStatus"
+
+  /chefs/me/wallet:
+    get:
+      operationId: getMyWallet
+      tags: [chefs]
+      summary: Authenticated chef's wallet — balance, freeze status, earnings, and full admin-credit history
+      responses:
+        "200":
+          description: Wallet data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChefOwnWallet"
+        "404":
+          description: No chef profile linked to this account
+
+  /chefs/apply:
+    post:
+      operationId: applyAsChef
+      tags: [chefs]
+      summary: Submit a chef application (BUYER → CHEF upgrade)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChefApplicationInput"
+      responses:
+        "201":
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChefApplicationResult"
+        "409":
+          description: Application already pending or chef already verified
+
+  # ── Uploads ────────────────────────────────────────────────────────────────
+
+  /uploads/image:
+    post:
+      operationId: requestImageUpload
+      tags: [uploads]
+      summary: Request a presigned URL for direct image upload (JPEG/PNG/WEBP, max 5 MB)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadRequest"
+      responses:
+        "200":
+          description: Presigned upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+
+  # ── Admin ──────────────────────────────────────────────────────────────────
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Platform-wide financial and activity overview
+      responses:
+        "200":
+          description: Admin stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
+  /admin/drops:
+    get:
+      operationId: listAdminDrops
+      tags: [admin]
+      summary: All drops — all statuses, admin control room view
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: mealSlot
+          schema:
+            type: string
+        - in: query
+          name: chefId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Admin drop list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDropList"
+
+  /admin/chefs:
+    get:
+      operationId: listAdminChefs
+      tags: [admin]
+      summary: Full chef roster with verification queue
+      responses:
+        "200":
+          description: Admin chef list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminChefList"
+
+  /admin/chefs/{id}/verify:
+    patch:
+      operationId: verifyChef
+      tags: [admin]
+      summary: Verify a chef application
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyResult"
+
+  /admin/chefs/{id}/reject:
+    patch:
+      operationId: rejectChef
+      tags: [admin]
+      summary: Reject a chef application
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectInput"
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyResult"
+
+  /admin/chefs/{id}/wallet/credit:
+    patch:
+      operationId: adminCreditChefWallet
+      tags: [admin]
+      summary: Manually credit a chef's wallet to clear a frozen balance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletCreditInput"
+      responses:
+        "200":
+          description: Credit applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletCreditResult"
+        "400":
+          description: Invalid input
+        "404":
+          description: Chef not found
+
+  /admin/drops/{id}/status:
+    patch:
+      operationId: overrideDropStatus
+      tags: [admin]
+      summary: Override a drop's status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DropStatusUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DropStatusResult"
+
+  /admin/config:
+    get:
+      operationId: getPlatformConfig
+      tags: [admin]
+      summary: Get platform fee and discount configuration
+      responses:
+        "200":
+          description: Platform config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformConfig"
+    patch:
+      operationId: updatePlatformConfig
+      tags: [admin]
+      summary: Update platform config (fees, discounts, markup)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformConfigUpdate"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformConfig"
+
+  # ── Subscriptions ──────────────────────────────────────────────────────────
+
+  /subscriptions:
+    get:
+      operationId: listSubscriptions
+      tags: [subscriptions]
+      summary: List all Club Pass subscriptions (admin)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscription list with revenue summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionList"
+
+  /subscriptions/{userId}:
+    get:
+      operationId: getUserSubscription
+      tags: [subscriptions]
+      summary: Check if a user has an active Club Pass
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscription status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionStatus"
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Subscribe to Club Pass
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Club Pass activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionActivated"
+    delete:
+      operationId: cancelSubscription
+      tags: [subscriptions]
+      summary: Cancel Club Pass
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelResult"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Create an account (BUYER or CHEF)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterInput' }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Log in with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginInput' }
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Clear session
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Current session user
+      responses:
+        '200':
+          description: Session user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/SessionUser' }
+  /auth/area:
+    patch:
+      operationId: updateArea
+      tags: [auth]
+      summary: Set user location for the proximity feed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AreaUpdate' }
+      responses:
+        '200':
+          description: Area updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  area: { type: string }
+  /ai/marketing:
+    post:
+      operationId: generateMarketing
+      tags: [ai]
+      summary: AI marketing generator for chefs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarketingInput' }
+      responses:
+        '200':
+          description: Generated marketing content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MarketingContent' }
+  /fulfillment/verify:
+    post:
+      operationId: verifyPickup
+      tags: [fulfillment]
+      summary: Chef scans buyer QR token — releases escrow split
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupVerification' }
+      responses:
+        '200':
+          description: Escrow released
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FulfillmentResult' }
+  /fulfillment/ledger:
+    get:
+      operationId: getEscrowLedger
+      tags: [fulfillment]
+      summary: Platform escrow ledger overview
+      responses:
+        '200':
+          description: Ledger totals
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EscrowLedger' }
+  /fulfillment/wallet/{chefId}:
+    get:
+      operationId: getChefWallet
+      tags: [fulfillment]
+      summary: Chef wallet balance and payout history
+      parameters:
+        - name: chefId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Wallet
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChefWallet' }
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    Chef:
+      type: object
+      required: [id, name, handle, cuisine, region, isVerified, rating, totalDrops, successfulDrops, points, rank]
+      properties:
+        id:               { type: string }
+        name:             { type: string }
+        handle:           { type: string }
+        cuisine:          { type: string }
+        region:           { type: string }
+        isVerified:       { type: boolean }
+        rating:           { type: number }
+        totalDrops:       { type: integer }
+        successfulDrops:  { type: integer }
+        points:           { type: integer }
+        rank:             { type: integer }
+
+    Drop:
+      type: object
+      required: [id, title, description, mealSlot, price, inventory, minOrders, currentOrders, remaining, status, pickupLocation, expiresAt, imageIndex, tags]
+      properties:
+        id:              { type: string }
+        title:           { type: string }
+        description:     { type: string }
+        mealSlot:        { type: string, enum: [Breakfast, Lunch, Dinner] }
+        price:           { type: number }
+        inventory:       { type: integer, description: "Hard plate limit" }
+        minOrders:       { type: integer, description: "Payout threshold" }
+        currentOrders:   { type: integer }
+        remaining:       { type: integer, description: "inventory - currentOrders" }
+        inventoryPct:    { type: number, description: "Fraction of inventory sold" }
+        soldOut:         { type: boolean }
+        status:          { type: string, enum: [ACTIVE, UNLOCKED, SOLD_OUT, COMPLETED, CANCELLED] }
+        pickupLocation:  { type: string }
+        expiresAt:       { type: string }
+        imageIndex:      { type: integer }
+        tags:            { type: array, items: { type: string } }
+        createdAt:       { type: ["string", "null"] }
+        chefEarnings:    { type: ["number", "null"] }
+        chef:            { $ref: "#/components/schemas/Chef" }
+
+    DropList:
+      type: object
+      required: [drops, total]
+      properties:
+        drops: { type: array, items: { $ref: "#/components/schemas/Drop" } }
+        total: { type: integer }
+
+    DropInput:
+      type: object
+      required: [chefId, title, description, mealSlot, price, inventory, minOrders, pickupLocation, expiresAt]
+      properties:
+        chefId:         { type: string }
+        title:          { type: string }
+        description:    { type: string }
+        mealSlot:       { type: string, enum: [Breakfast, Lunch, Dinner] }
+        price:          { type: number }
+        inventory:      { type: integer, minimum: 1, maximum: 500 }
+        minOrders:      { type: integer, minimum: 1, maximum: 500 }
+        pickupLocation: { type: string }
+        expiresAt:      { type: string, format: date-time }
+        imageIndex:     { type: integer, minimum: 1, maximum: 3 }
+        tags:           { type: array, items: { type: string } }
+
+    DropStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACTIVE, UNLOCKED, SOLD_OUT, COMPLETED, CANCELLED] }
+
+    DropStatusResult:
+      type: object
+      required: [id, status]
+      properties:
+        id:     { type: string }
+        status: { type: string }
+
+    Order:
+      type: object
+      required: [id, dropId, userId, price, status, orderedAt]
+      properties:
+        id:             { type: string }
+        dropId:         { type: string }
+        userId:         { type: string }
+        price:          { type: number }
+        effectivePrice: { type: number }
+        isMemberOrder:  { type: boolean }
+        status:         { type: string }
+        orderedAt:      { type: string }
+        paymentMethod:  { type: string, enum: [DIGITAL, CASH], description: "DIGITAL = pre-escrow; CASH = pay at pickup" }
+        escrowStatus:   { type: ["string", "null"], enum: [HELD, RELEASED, CASH, CASH_RECONCILED, CANCELLED, null] }
+        pickupToken:    { type: ["string", "null"] }
+        dropTitle:      { type: ["string", "null"] }
+        mealSlot:       { type: ["string", "null"] }
+        chefName:       { type: ["string", "null"] }
+        expiresAt:      { type: ["string", "null"] }
+        inventory:      { type: ["integer", "null"] }
+        currentOrders:  { type: ["integer", "null"] }
+        dropStatus:     { type: ["string", "null"] }
+        pickupLocation: { type: ["string", "null"] }
+
+    OrderList:
+      type: object
+      required: [orders, total]
+      properties:
+        orders: { type: array, items: { $ref: "#/components/schemas/Order" } }
+        total:  { type: integer }
+
+    OrderInput:
+      type: object
+      required: [userId, dropId]
+      properties:
+        userId:        { type: string }
+        dropId:        { type: string }
+        paymentMethod: { type: string, enum: [DIGITAL, CASH], default: DIGITAL }
+
+    OrderResult:
+      type: object
+      required: [order, drop]
+      properties:
+        order:
+          type: object
+          properties:
+            id:             { type: string }
+            dropId:         { type: string }
+            userId:         { type: string }
+            price:          { type: number }
+            effectivePrice: { type: number }
+            isMemberOrder:  { type: boolean }
+            status:         { type: string }
+            orderedAt:      { type: string }
+            memberDiscount: { type: number }
+            paymentMethod:  { type: string, enum: [DIGITAL, CASH] }
+            escrowStatus:   { type: string, enum: [HELD, RELEASED, CASH, CASH_RECONCILED, CANCELLED] }
+            pickupToken:    { type: ["string", "null"] }
+        drop:
+          type: object
+          properties:
+            id:            { type: string }
+            currentOrders: { type: integer }
+            inventory:     { type: integer }
+            remaining:     { type: integer }
+            status:        { type: string }
+            justUnlocked:  { type: boolean }
+            justSoldOut:   { type: boolean }
+            chefEarnings:  { type: ["number", "null"] }
+
+    OrderDetail:
+      type: object
+      properties:
+        id:             { type: string }
+        price:          { type: number }
+        effectivePrice: { type: number }
+        isMemberOrder:  { type: boolean }
+        status:         { type: string }
+        orderedAt:      { type: string }
+        paymentMethod:  { type: string, enum: [DIGITAL, CASH] }
+        escrowStatus:   { type: ["string", "null"], enum: [HELD, RELEASED, CASH, CASH_RECONCILED, CANCELLED, null] }
+        pickupToken:    { type: ["string", "null"] }
+        dropId:         { type: string }
+        dropTitle:      { type: string }
+        mealSlot:       { type: string }
+        expiresAt:      { type: string }
+        inventory:      { type: integer }
+        currentOrders:  { type: integer }
+        dropStatus:     { type: string }
+        pickupLocation: { type: ["string", "null"] }
+        chefName:       { type: string }
+        userId:         { type: string }
+
+    CancelResult:
+      type: object
+      required: [id, status]
+      properties:
+        id:        { type: string }
+        status:    { type: string }
+        dropId:    { type: ["string", "null"] }
+        validUntil: { type: ["string", "null"] }
+
+    ChefList:
+      type: object
+      required: [chefs, total]
+      properties:
+        chefs: { type: array, items: { $ref: "#/components/schemas/Chef" } }
+        total: { type: integer }
+
+    ChefDetail:
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/Chef"
+      properties:
+        activeDrops:
+          type: array
+          items: { $ref: "#/components/schemas/Drop" }
+
+    AdminStats:
+      type: object
+      properties:
+        platform:
+          type: object
+          properties:
+            totalDrops:         { type: number }
+            activeDrops:        { type: number }
+            unlockedDrops:      { type: number }
+            soldOutDrops:       { type: number }
+            completedDrops:     { type: number }
+            totalOrders:        { type: number }
+            grossRevenue:       { type: number }
+            platformRevenue:    { type: number }
+            chefPayouts:        { type: number }
+            totalChefs:         { type: number }
+            verifiedChefs:      { type: number }
+            pendingChefs:       { type: number }
+            totalUsers:         { type: number }
+            subscriptions:
+              type: object
+              properties:
+                total:          { type: number }
+                active:         { type: number }
+                monthlyRevenue: { type: number }
+        byMealSlot:
+          type: array
+          items:
+            type: object
+            properties:
+              mealSlot: { type: string }
+              count:    { type: number }
+              revenue:  { type: number }
+              soldOut:  { type: number }
+        topChefs:
+          type: array
+          items:
+            type: object
+            properties:
+              id:              { type: string }
+              name:            { type: string }
+              handle:          { type: string }
+              rating:          { type: number }
+              successfulDrops: { type: number }
+              totalEarnings:   { type: number }
+        generatedAt: { type: string }
+
+    AdminDrop:
+      type: object
+      properties:
+        id:            { type: string }
+        title:         { type: string }
+        mealSlot:      { type: string }
+        status:        { type: string }
+        price:         { type: number }
+        inventory:     { type: integer }
+        minOrders:     { type: integer }
+        currentOrders: { type: integer }
+        remaining:     { type: integer }
+        expiresAt:     { type: string }
+        chefEarnings:  { type: ["number", "null"] }
+        chefId:        { type: string }
+        chefName:      { type: string }
+        orderCount:    { type: number }
+        batchRevenue:  { type: number }
+
+    AdminDropList:
+      type: object
+      required: [drops, total]
+      properties:
+        drops: { type: array, items: { $ref: "#/components/schemas/AdminDrop" } }
+        total: { type: integer }
+
+    AdminChef:
+      type: object
+      properties:
+        id:                 { type: string }
+        name:               { type: string }
+        handle:             { type: string }
+        cuisine:            { type: string }
+        region:             { type: string }
+        isVerified:         { type: boolean }
+        verificationStatus: { type: string, enum: [PENDING_REVIEW, VERIFIED, REJECTED] }
+        foodBadgeUrl:       { type: ["string", "null"] }
+        nationalIdUrl:      { type: ["string", "null"] }
+        rejectionReason:    { type: ["string", "null"] }
+        submittedAt:        { type: ["string", "null"] }
+        rating:             { type: number }
+        points:             { type: integer }
+        rank:               { type: integer }
+        totalDrops:         { type: integer }
+        successfulDrops:    { type: integer }
+        walletBalance:       { type: number, description: "Current wallet balance; negative means debt" }
+        lastAdminCredit:     { type: ["string", "null"], description: "ISO datetime of the most recent admin wallet credit" }
+        lastAdminCreditNote: { type: ["string", "null"], description: "Note attached to the most recent admin wallet credit" }
+        creditHistory:
+          type: array
+          description: "All admin credits applied to this chef, newest first"
+          items:
+            $ref: "#/components/schemas/AdminCreditEntry"
+
+    AdminCreditEntry:
+      type: object
+      properties:
+        amount:    { type: ["number", "null"], description: "TTD amount credited; null for records migrated from legacy schema" }
+        note:      { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"], description: "ISO datetime of this credit" }
+
+    WalletCreditInput:
+      type: object
+      required: [amount]
+      properties:
+        amount:         { type: number, minimum: 0.01, description: "TTD amount to credit (must be positive)" }
+        note:           { type: string, description: "Optional admin note recorded on the chef node" }
+        idempotencyKey: { type: string, format: uuid, description: "Client-generated UUID; a second request with the same key within 60 s returns the first response without creating a duplicate credit" }
+
+    WalletCreditResult:
+      type: object
+      required: [success, chefId, newWalletBalance]
+      properties:
+        success:          { type: boolean }
+        chefId:           { type: string }
+        newWalletBalance: { type: number }
+
+    AdminChefList:
+      type: object
+      required: [chefs, pendingVerification]
+      properties:
+        chefs:               { type: array, items: { $ref: "#/components/schemas/AdminChef" } }
+        pendingVerification: { type: integer }
+
+    VerifyResult:
+      type: object
+      required: [id, isVerified]
+      properties:
+        id:                   { type: string }
+        isVerified:           { type: boolean }
+        verificationStatus:   { type: string }
+        reason:               { type: ["string", "null"] }
+        notificationSent:     { type: boolean, description: "True if a push notification was queued to the chef's device" }
+
+    RejectInput:
+      type: object
+      properties:
+        reason: { type: string, description: "Reason shown to the chef on rejection" }
+
+    ChefVerificationStatus:
+      type: object
+      properties:
+        role:               { type: string }
+        chefId:             { type: ["string", "null"] }
+        chefName:           { type: ["string", "null"] }
+        verificationStatus: { type: ["string", "null"], enum: [PENDING_REVIEW, VERIFIED, REJECTED, null] }
+        isVerified:         { type: boolean }
+        rejectionReason:    { type: ["string", "null"] }
+        submittedAt:        { type: ["string", "null"] }
+
+    ChefApplicationInput:
+      type: object
+      required: [kitchenName, area, foodBadgeUrl, nationalIdUrl]
+      properties:
+        kitchenName:   { type: string, minLength: 2, maxLength: 100 }
+        area:          { type: string, minLength: 2, maxLength: 80 }
+        cuisine:       { type: string }
+        foodBadgeUrl:  { type: string, description: "Object path returned by /uploads/image" }
+        nationalIdUrl: { type: string, description: "Object path returned by /uploads/image" }
+
+    ChefApplicationResult:
+      type: object
+      properties:
+        chefId:             { type: string }
+        verificationStatus: { type: string }
+        message:            { type: string }
+
+    UploadRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:        { type: string }
+        size:        { type: integer, description: "File size in bytes, max 5242880 (5 MB)" }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+
+    UploadResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:  { type: string, description: "Presigned PUT URL — upload file bytes directly to this URL" }
+        objectPath: { type: string, description: "Store this path and send it in subsequent API calls" }
+        metadata:
+          type: object
+          properties:
+            name:        { type: string }
+            size:        { type: integer }
+            contentType: { type: string }
+
+    PlatformConfig:
+      type: object
+      required: [platformFeeRate, memberDiscountRate, markupRate, clubPassPrice, walletFreezeThreshold]
+      properties:
+        platformFeeRate:       { type: number, description: "Fraction e.g. 0.10 = 10%" }
+        memberDiscountRate:    { type: number, description: "Fraction e.g. 0.10 = 10%" }
+        markupRate:            { type: number, description: "Fraction e.g. 0.05 = 5%" }
+        clubPassPrice:         { type: number, description: "Monthly price in TTD" }
+        walletFreezeThreshold: { type: number, description: "Chef wallet balance below which drop creation is blocked (must be ≤ 0)" }
+
+    PlatformConfigUpdate:
+      type: object
+      properties:
+        platformFeeRate:       { type: number }
+        memberDiscountRate:    { type: number }
+        markupRate:            { type: number }
+        clubPassPrice:         { type: number }
+        walletFreezeThreshold: { type: number, description: "Must be ≤ 0" }
+
+    Subscription:
+      type: object
+      properties:
+        id:        { type: string }
+        userId:    { type: string }
+        userName:  { type: ["string", "null"] }
+        tier:      { type: string }
+        status:    { type: string }
+        price:     { type: number }
+        startedAt: { type: string }
+        expiresAt: { type: string }
+
+    SubscriptionList:
+      type: object
+      required: [subscriptions, total, monthlyRevenue]
+      properties:
+        subscriptions:  { type: array, items: { $ref: "#/components/schemas/Subscription" } }
+        total:          { type: integer }
+        monthlyRevenue: { type: number }
+
+    SubscriptionStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive:     { type: boolean }
+        subscription: { $ref: "#/components/schemas/Subscription" }
+
+    SubscriptionActivated:
+      type: object
+      properties:
+        subscriptionId: { type: string }
+        userId:         { type: string }
+        tier:           { type: string }
+        status:         { type: string }
+        price:          { type: number }
+        expiresAt:      { type: string }
+        benefits:       { type: array, items: { type: string } }
+
+    RegisterInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:     { type: string }
+        email:    { type: string }
+        password: { type: string }
+        role:     { type: string, enum: [BUYER] }
+        area:     { type: string }
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string }
+        password: { type: string }
+    AuthResponse:
+      type: object
+      properties:
+        user:  { $ref: '#/components/schemas/SessionUser' }
+        token: { type: string }
+    SessionUser:
+      type: object
+      properties:
+        id:                      { type: string }
+        name:                    { type: string }
+        email:                   { type: string }
+        role:                    { type: string, enum: [BUYER, CHEF, ADMIN] }
+        area:                    { type: string, nullable: true }
+        chefId:                  { type: string, nullable: true }
+        chefVerified:            { type: boolean, nullable: true }
+        chefVerificationStatus:  { type: ["string", "null"], enum: [PENDING_REVIEW, VERIFIED, REJECTED, null] }
+        chefRejectionReason:     { type: ["string", "null"] }
+        isMember:                { type: boolean }
+        walletBalance:           { type: number, nullable: true }
+    AreaUpdate:
+      type: object
+      required: [area]
+      properties:
+        area: { type: string }
+    MarketingInput:
+      type: object
+      required: [rawDescription]
+      properties:
+        rawDescription: { type: string }
+        dishName:       { type: string }
+        tone:           { type: string, enum: [luxury, playful, street] }
+    MarketingContent:
+      type: object
+      properties:
+        caption:        { type: string }
+        adCopy:         { type: string }
+        hashtags:       { type: array, items: { type: string } }
+        suggestedTitle: { type: string }
+    PickupVerification:
+      type: object
+      required: [pickupToken, chefId]
+      properties:
+        pickupToken: { type: string }
+        chefId:      { type: string }
+    FulfillmentResult:
+      type: object
+      properties:
+        orderId:           { type: string }
+        dropId:            { type: string }
+        dropTitle:         { type: string }
+        paymentMethod:     { type: string, enum: [DIGITAL, CASH] }
+        gross:             { type: number }
+        chefShare:         { type: number }
+        platformShare:     { type: number }
+        chefWalletBalance: { type: number }
+        cashCollected:     { type: ["number", "null"], description: "For CASH orders: gross amount collected by chef in cash" }
+        status:            { type: string }
+    EscrowLedger:
+      type: object
+      properties:
+        heldInEscrow:         { type: number, description: "Digital escrow currently held" }
+        totalChefPayouts:     { type: number, description: "Total digital chef payouts released" }
+        totalPlatformRevenue: { type: number, description: "Total platform fees (digital + cash)" }
+        ordersInEscrow:       { type: number, description: "Digital orders awaiting pickup" }
+        ordersFulfilled:      { type: number, description: "Digital orders fulfilled" }
+        cash:
+          type: object
+          description: Cash order breakdown (excludes cancelled orders)
+          properties:
+            ordersAwaitingPickup: { type: number }
+            ordersFulfilled:      { type: number }
+            totalCashCollected:   { type: number }
+            totalPlatformFees:    { type: number }
+            cashOrdersHeld:       { type: number }
+        digital:
+          type: object
+          description: Digital escrow breakdown (excludes cancelled orders)
+          properties:
+            ordersInEscrow:       { type: number }
+            ordersFulfilled:      { type: number }
+            totalChefPayouts:     { type: number }
+            totalPlatformRevenue: { type: number }
+    WalletTransaction:
+      type: object
+      properties:
+        orderId:       { type: string }
+        dropTitle:     { type: string }
+        paymentMethod: { type: string, enum: [DIGITAL, CASH] }
+        chefShare:     { type: number }
+        platformShare: { type: number }
+        cashCollected: { type: ["number", "null"] }
+        walletEffect:  { type: number, description: "Positive = credit (digital payout); Negative = debit (cash fee)" }
+        fulfilledAt:   { type: ["string", "null"] }
+
+    ChefOwnWallet:
+      type: object
+      description: "Wallet view for the authenticated chef — includes full admin-credit history"
+      properties:
+        chefId:          { type: string }
+        walletBalance:   { type: number }
+        freezeThreshold: { type: number, description: "Wallet balance below which drop creation is blocked" }
+        isFrozen:        { type: boolean, description: "True when walletBalance < freezeThreshold" }
+        cashDebt:        { type: number, description: "Absolute value of negative balance (0 if balance is positive)" }
+        totalEarnings:   { type: number, description: "All-time sum of net chefShare for completed drops" }
+        creditHistory:
+          type: array
+          description: "All admin wallet credits applied to this chef, newest first"
+          items:
+            $ref: "#/components/schemas/AdminCreditEntry"
+
+    ChefWallet:
+      type: object
+      properties:
+        walletBalance:      { type: number }
+        freezeThreshold:    { type: number, description: "Wallet balance below which drop creation is blocked" }
+        isFrozen:           { type: boolean, description: "True when walletBalance < freezeThreshold" }
+        cashDebt:           { type: number, description: "Absolute value of negative balance (0 if balance is positive)" }
+        totalEarnings:      { type: number, description: "All-time sum of net chefShare for all fulfilled orders (never truncated)" }
+        recentPayouts:
+          type: array
+          description: "Alias for recentTransactions — backwards compatible"
+          items:
+            $ref: "#/components/schemas/WalletTransaction"
+        recentTransactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletTransaction"

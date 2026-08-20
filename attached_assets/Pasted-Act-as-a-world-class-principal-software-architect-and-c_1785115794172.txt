@@ -1,0 +1,22 @@
+Act as a world-class principal software architect and cultural engineer. Build a production-ready, zero-cost-infrastructure web and mobile application for "Friday Food Club"—a secret chef menu marketplace and cultural movement starting in Trinidad.
+
+### BRAND & VIBE IDENTITY:
+- Visual Aesthetic: Luxury gold (#D4AF37), deep red, and dark charcoal backgrounds, matching the provided brand assets (metallic NFC membership cards, gold coins, Top Chef trophies, and custom medallions).
+- Emotional Core: "Drop culture" for food. High-energy, exclusive, anti-establishment, community-driven, and hyper-focused on secret chef menus.
+
+### CORE ARCHITECTURE & TECH STACK:
+- Frontend: Next.js (Web) + React Native/Expo (Mobile) styled with the exact luxury gold and dark charcoal theme.
+- Database: Neo4j Aura Free Tier to map the social graph (Users, Chefs, Secret Menus, WhatsApp shares, NFC taps, and Trinidad regional culinary pathways).
+- Backend/Edge: Cloudflare Workers handling serverless routing, instant drop notifications, and WhatsApp webhook integrations with zero cold-start latency.
+- AI Integration: Open-source LLM API integration (e.g., Hugging Face/Mistral free tier) to automatically transform raw chef menu inputs into high-urgency, culturally resonant WhatsApp broadcast copy.
+
+### MANDATORY FEATURES TO CODE:
+1. The Drop Feed & WhatsApp Engine: A high-velocity social feed where verified chefs and community cooks drop limited-batch secret menus. Built-in "Share to WhatsApp" deep links optimized for local FOMO.
+2. NFC Membeprint Integration: Digital profile linking via NFC card identifiers that unlock secret menus and track regional check-ins when scanned.
+3. Micro-Batch Crowdfunding & Wallet Payouts: 
+   - Cooks post a secret plate with a custom price and a minimum order threshold (e.g., 15 pre-orders required to unlock the batch).
+   - Automated logic locks funds and routes payouts directly to the chef’s digital wallet once the threshold clears.
+4. Top Chef Gamification: Dynamic leaderboards and community voting systems linked to weekly recognition and cash prize pools.
+
+### EXECUTION STANDARD:
+Write clean, modular, production-ready code with strict security rules for user wallets, seamless edge routing, and a relentless focus on maintaining high cultural energy and smooth user flow.
