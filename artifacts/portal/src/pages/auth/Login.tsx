@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/components/SessionProvider";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,43 +25,34 @@ export default function Login() {
     defaultValues: { email: "", password: "" },
   });
 
-  const queryClient = useQueryClient();
-  const { mutate: login, isPending } = useLogin();
+  const { login } = useSession();
+  const [isPending, setIsPending] = useState(false);
 
-  function onSubmit(values: z.infer<typeof loginSchema>) {
-    login(
-      { data: values },
-      {
-        onSuccess: (data) => {
-          // Populate the session cache immediately so ProtectedRoute sees the
-          // authenticated user without waiting for a /api/auth/me round-trip.
-          // Without this, the pre-login 401 stays cached (retry: false) and
-          // ProtectedRoute redirects back to /login even after a valid login.
-          if (data?.user) {
-            queryClient.setQueryData(getGetMeQueryKey(), { user: data.user });
-          }
-          if (data?.user?.role === "CHEF") {
-            setLocation("/studio");
-          } else if (data?.user?.role === "ADMIN") {
-            setLocation("/admin");
-          } else {
-            toast({
-              title: "Access Denied",
-              description: "Buyers must use the mobile app.",
-              variant: "destructive",
-            });
-          }
-        },
-        onError: (err: any) => {
-          const msg = err?.response?.data?.error ?? "Check your credentials and try again.";
-          toast({
-            title: "Login Failed",
-            description: msg,
-            variant: "destructive",
-          });
-        },
+  async function onSubmit(values: z.infer<typeof loginSchema>) {
+    setIsPending(true);
+    try {
+      const { user } = await login(values.email, values.password);
+      if (user?.role === "CHEF") {
+        setLocation("/studio");
+      } else if (user?.role === "ADMIN") {
+        setLocation("/admin");
+      } else {
+        toast({
+          title: "Access Denied",
+          description: "Buyers must use the mobile app.",
+          variant: "destructive",
+        });
       }
-    );
+    } catch (err: any) {
+      const msg = err?.data?.message ?? err?.message ?? "Check your credentials and try again.";
+      toast({
+        title: "Login Failed",
+        description: msg,
+        variant: "destructive",
+      });
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (

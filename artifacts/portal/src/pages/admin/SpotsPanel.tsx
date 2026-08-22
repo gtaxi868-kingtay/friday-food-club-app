@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery as useConvexQuery, useMutation as useConvexMutation } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import { useSession } from '@/components/SessionProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -56,65 +57,50 @@ const TT_REGIONS = [
   'Point Fortin', 'Tobago', 'Other',
 ];
 
-// ── API helpers ───────────────────────────────────────────────────────────────
-
-function useApiHeaders() {
-  const { token } = useSession();
-  return () => ({
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  });
-}
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function SpotCard({
   spot,
   chefs,
-  headers,
+  sessionToken,
   onDelete,
 }: {
   spot: Spot;
   chefs: ChefOption[];
-  headers: Record<string, string>;
+  sessionToken: string;
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [pinChefId, setPinChefId] = useState('');
-  const qc = useQueryClient();
   const { toast } = useToast();
 
-  const pinMutation = useMutation({
-    mutationFn: async (chefId: string) => {
-      const r = await fetch(`/api/admin/locations/${spot.id}/pin-chef`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ chefId }),
-      });
-      if (!r.ok) throw new Error(await r.text());
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-locations'] });
-      setPinChefId('');
-      toast({ title: 'Chef pinned', description: 'Chef is now a pinned subscriber at this spot.' });
-    },
-    onError: () => toast({ title: 'Error', description: 'Failed to pin chef.', variant: 'destructive' }),
-  });
+  const pinChefMutation = useConvexMutation(api.locations.pinChef);
+  const unpinChefMutation = useConvexMutation(api.locations.unpinChef);
 
-  const unpinMutation = useMutation({
-    mutationFn: async (chefId: string) => {
-      const r = await fetch(`/api/admin/locations/${spot.id}/chefs/${chefId}`, {
-        method: 'DELETE',
-        headers,
-      });
-      if (!r.ok) throw new Error(await r.text());
+  const pinMutation = {
+    isPending: false,
+    mutate: async (chefId: string) => {
+      try {
+        await pinChefMutation({ sessionToken, locationId: spot.id as any, chefId: chefId as any });
+        setPinChefId('');
+        toast({ title: 'Chef pinned', description: 'Chef is now a pinned subscriber at this spot.' });
+      } catch {
+        toast({ title: 'Error', description: 'Failed to pin chef.', variant: 'destructive' });
+      }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-locations'] });
-      toast({ title: 'Chef unpinned', description: 'Chef removed from this spot.' });
+  };
+
+  const unpinMutation = {
+    isPending: false,
+    mutate: async (chefId: string) => {
+      try {
+        await unpinChefMutation({ sessionToken, locationId: spot.id as any, chefId: chefId as any });
+        toast({ title: 'Chef unpinned', description: 'Chef removed from this spot.' });
+      } catch {
+        toast({ title: 'Error', description: 'Failed to unpin chef.', variant: 'destructive' });
+      }
     },
-    onError: () => toast({ title: 'Error', description: 'Failed to unpin chef.', variant: 'destructive' }),
-  });
+  };
 
   // Chefs not already pinned here
   const unpinnedChefs = chefs.filter(c => !spot.pinnedChefs.some(pc => pc.id === c.id));
@@ -246,8 +232,8 @@ function SpotCard({
 
 export default function SpotsPanel() {
   const { toast } = useToast();
-  const qc = useQueryClient();
-  const getHeaders = useApiHeaders();
+  const { token } = useSession();
+  const sessionToken = token ?? '';
   const [showAdd, setShowAdd] = useState(false);
 
   // Form state
@@ -255,65 +241,61 @@ export default function SpotsPanel() {
     name: '', address: '', region: '', lat: '', lng: '', isPinnable: false, nfcId: '',
   });
 
-  const { data: spots = [], isLoading } = useQuery<Spot[]>({
-    queryKey: ['admin-locations'],
-    queryFn: async () => {
-      const r = await fetch('/api/admin/locations', { headers: getHeaders() });
-      if (!r.ok) throw new Error('Failed to load locations');
-      return r.json();
-    },
-    refetchInterval: 30_000,
-  });
+  const rawSpots = useConvexQuery(api.locations.list, token ? { sessionToken } : 'skip');
+  const isLoading = !!token && rawSpots === undefined;
+  const spots: Spot[] = (rawSpots ?? []).map((l: any) => ({
+    id: l._id,
+    name: l.name,
+    address: l.address,
+    region: l.region,
+    lat: l.lat ?? null,
+    lng: l.lng ?? null,
+    isPinnable: l.isPinnable,
+    createdAt: new Date(l._creationTime).toISOString(),
+    pinnedChefs: (l.pinnedChefs ?? []).map((c: any) => ({ id: c.id, name: c.name, handle: c.handle, isVerified: c.isVerified })),
+  }));
 
-  const { data: chefs = [] } = useQuery<ChefOption[]>({
-    queryKey: ['admin-chefs-list'],
-    queryFn: async () => {
-      const r = await fetch('/api/admin/chefs', { headers: getHeaders() });
-      if (!r.ok) throw new Error('Failed to load chefs');
-      return r.json();
-    },
-  });
+  const rawChefs = useConvexQuery(api.chefs.list, token ? {} : 'skip');
+  const chefs: ChefOption[] = (rawChefs ?? []).map((c: any) => ({
+    id: c._id, name: c.name, handle: c.handle, region: c.region, isVerified: c.isVerified,
+  }));
 
-  const addMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch('/api/admin/locations', {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({
+  const createMutation = useConvexMutation(api.locations.create);
+  const removeMutation = useConvexMutation(api.locations.remove);
+
+  const addMutation = {
+    isPending: false,
+    mutate: async () => {
+      try {
+        await createMutation({
+          sessionToken,
           name: form.name.trim(),
           address: form.address.trim(),
           region: form.region,
-          lat: form.lat ? parseFloat(form.lat) : null,
-          lng: form.lng ? parseFloat(form.lng) : null,
+          lat: form.lat ? parseFloat(form.lat) : undefined,
+          lng: form.lng ? parseFloat(form.lng) : undefined,
           isPinnable: form.isPinnable,
-          nfcId: form.nfcId.trim() || null,
-        }),
-      });
-      if (!r.ok) throw new Error(await r.text());
-      return r.json();
+          nfcId: form.nfcId.trim() || undefined,
+        });
+        setShowAdd(false);
+        setForm({ name: '', address: '', region: '', lat: '', lng: '', isPinnable: false, nfcId: '' });
+        toast({ title: 'Spot added', description: 'New location saved to the network.' });
+      } catch {
+        toast({ title: 'Error', description: 'Failed to add spot.', variant: 'destructive' });
+      }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-locations'] });
-      setShowAdd(false);
-      setForm({ name: '', address: '', region: '', lat: '', lng: '', isPinnable: false, nfcId: '' });
-      toast({ title: 'Spot added', description: 'New location saved to the network.' });
-    },
-    onError: () => toast({ title: 'Error', description: 'Failed to add spot.', variant: 'destructive' }),
-  });
+  };
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const r = await fetch(`/api/admin/locations/${id}`, {
-        method: 'DELETE', headers: getHeaders(),
-      });
-      if (!r.ok) throw new Error(await r.text());
+  const deleteMutation = {
+    mutate: async (id: string) => {
+      try {
+        await removeMutation({ sessionToken, locationId: id as any });
+        toast({ title: 'Spot removed' });
+      } catch {
+        toast({ title: 'Error', description: 'Failed to remove spot.', variant: 'destructive' });
+      }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-locations'] });
-      toast({ title: 'Spot removed' });
-    },
-    onError: () => toast({ title: 'Error', description: 'Failed to remove spot.', variant: 'destructive' }),
-  });
+  };
 
   // Group spots by region
   const byRegion = spots.reduce<Record<string, Spot[]>>((acc, s) => {
@@ -392,7 +374,7 @@ export default function SpotsPanel() {
                     key={spot.id}
                     spot={spot}
                     chefs={chefs}
-                    headers={getHeaders()}
+                    sessionToken={sessionToken}
                     onDelete={() => deleteMutation.mutate(spot.id)}
                   />
                 ))}

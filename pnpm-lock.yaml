@@ -587,6 +587,9 @@ importers:
       '@rollup/rollup-darwin-x64':
         specifier: 4.62.2
         version: 4.62.2
+      convex:
+        specifier: 1.44.0
+        version: 1.44.0(react@19.1.0)
       lightningcss-darwin-x64:
         specifier: 1.32.0
         version: 1.32.0
@@ -708,6 +711,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/convex-backend':
+        specifier: workspace:*
+        version: link:../convex-backend
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
