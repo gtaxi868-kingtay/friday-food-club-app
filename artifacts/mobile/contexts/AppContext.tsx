@@ -1,28 +1,23 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQuery, useMutation, useConvex } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
+import type { Id } from '@workspace/convex-backend/convex/_generated/dataModel';
+import { useAuth } from './AuthContext';
 
-// ─── API Base URL ─────────────────────────────────────────────────────────────
-// In the Replit environment, the API server is routed under /api on the same
-// domain as the Expo web preview.  On native (Expo Go), the same domain
-// applies via the EXPO_PUBLIC_DOMAIN env var injected by the workflow.
-const RAW_DOMAIN = process.env['EXPO_PUBLIC_DOMAIN'] ?? '';
-export const API_BASE = process.env['EXPO_PUBLIC_API_URL'] ?? (RAW_DOMAIN
-  ? `https://${RAW_DOMAIN}/api`
-  : '/api');
+/**
+ * @deprecated The Express/Neo4j API this pointed to is retired — the backend
+ * is now Convex (see contexts/AuthContext.tsx and this file's useQuery/
+ * useMutation calls). Kept only so still-unmigrated screens (chef studio,
+ * wallet, create-drop, earnings, apply-chef, scan, club-pass) compile; their
+ * fetch() calls against this will fail until ported to Convex.
+ */
+export const API_BASE = '';
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API ${path} → ${res.status}: ${body}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Guest identity ─────────────────────────────────────────────────────────
+// Anonymous checkout needs a server-signed guest token (Convex mutations have
+// no cookie jar) — issued once, persisted, reused on every order call.
+const GUEST_TOKEN_KEY = '@ffc_guest_token';
 
 export interface Chef {
   id: string;
@@ -44,21 +39,21 @@ export interface Drop {
   description: string;
   chef: Chef;
   price: number;
-  originalPrice?: number; // pre-discount price — present when user has Club Pass and a discount was applied
-  inventory: number;   // hard plate limit
-  minOrders: number;   // payout threshold
+  originalPrice?: number;
+  inventory: number;
+  minOrders: number;
   currentOrders: number;
-  remaining: number;   // inventory - currentOrders
+  remaining: number;
   expiresAt: string;
   cuisine: string;
   mealSlot: 'Breakfast' | 'Lunch' | 'Dinner';
   imageIndex: number;
-  imageUrl?: string | null;  // chef-uploaded food photo — served via /api/drops/:id/photo
+  imageUrl?: string | null;
   tags: string[];
-  status?: 'ACTIVE' | 'UNLOCKED' | 'SOLD_OUT' | 'COMPLETED' | 'CANCELLED';
+  status?: 'ACTIVE' | 'SOLD_OUT' | 'EXPIRED' | 'CANCELLED';
   soldOut?: boolean;
   pickupLocation?: string;
-  isSecret?: boolean; // secret drops: only orderable on Fridays
+  isSecret?: boolean;
 }
 
 export interface Order {
@@ -66,16 +61,16 @@ export interface Order {
   dropId: string;
   dropTitle: string;
   chefName: string;
-  price: number;           // base price (undiscounted)
-  effectivePrice?: number; // actual amount owed — discounted for Club Pass members
+  price: number;
+  effectivePrice?: number;
   orderedAt: string;
   status: 'pending' | 'confirmed' | 'cancelled';
   minOrders: number;
   currentOrders: number;
   expiresAt: string;
-  pickupToken?: string;   // QR token shown at pickup — releases escrow / reconciles cash
+  pickupToken?: string;
   escrowStatus?: 'HELD' | 'RELEASED' | 'CASH' | 'CASH_RECONCILED';
-  paymentMethod?: 'DIGITAL' | 'CASH'; // CASH = pay at pickup; DIGITAL = pre-escrow (default)
+  paymentMethod?: 'DIGITAL' | 'CASH';
 }
 
 export interface UserProfile {
@@ -98,284 +93,146 @@ interface AppContextValue {
   orderedDropIds: Set<string>;
   isLoadingDrops: boolean;
   dropsError: string | null;
-  preOrder: (drop: Drop, paymentMethod?: 'DIGITAL' | 'CASH', extraHeaders?: Record<string, string>) => Promise<void>;
+  preOrder: (drop: Drop, paymentMethod?: 'DIGITAL' | 'CASH') => Promise<void>;
   cancelOrder: (orderId: string) => Promise<void>;
   getDropById: (id: string) => Drop | undefined;
   refreshDrops: () => Promise<void>;
 }
 
-// ─── Seed / Fallback Data ─────────────────────────────────────────────────────
-// Used as a fallback when the API is unreachable (offline mode, dev without creds).
-
-// Blank profile — real values come from the auth layer after login
 const DEFAULT_PROFILE: UserProfile = {
   name: '', handle: '', nfcId: '',
   memberSince: '', tier: 'Bronze', points: 0,
   walletBalance: 0, ordersCount: 0, chefsFollowed: 0,
 };
 
-// Stable anonymous user ID — persisted in AsyncStorage
-const USER_ID_KEY = '@ffc_user_id';
-const ORDERS_KEY = '@ffc_orders';
-const PROFILE_KEY = '@ffc_profile';
-const DROP_ORDERS_KEY = '@ffc_drop_orders';
-
-// ─── Context ─────────────────────────────────────────────────────────────────
-
 const AppContext = createContext<AppContextValue | null>(null);
 
-// ─── API response → Drop shape mapper ────────────────────────────────────────
-
-interface ApiDrop {
-  id: string;
-  title: string;
-  description: string;
-  mealSlot: 'Breakfast' | 'Lunch' | 'Dinner';
-  price: number;
-  originalPrice?: number;
-  inventory: number;
-  minOrders: number;
-  currentOrders: number;
-  remaining?: number;
-  soldOut?: boolean;
-  status: string;
-  pickupLocation?: string;
-  expiresAt: string;
-  imageIndex: number;
-  imageUrl?: string | null;
-  tags: string[];
-  chef: Chef;
-}
-
-function apiDropToLocal(d: ApiDrop): Drop {
+function mapDrop(d: any): Drop {
   return {
-    id: d.id,
+    id: d._id,
     title: d.title,
     description: d.description,
-    chef: d.chef,
+    chef: {
+      id: d.chefId,
+      name: d.chefName ?? '',
+      handle: d.chefHandle ?? '',
+      rating: 0, totalDrops: 0, successfulDrops: 0, isVerified: true,
+      cuisine: '', region: '', points: 0, rank: 0,
+    },
     price: d.price,
-    originalPrice: d.originalPrice,
-    inventory: d.inventory ?? 0,
+    inventory: d.inventory,
     minOrders: d.minOrders,
     currentOrders: d.currentOrders,
-    remaining: d.remaining ?? Math.max(0, (d.inventory ?? 0) - d.currentOrders),
-    soldOut: d.soldOut ?? d.status === 'SOLD_OUT',
+    remaining: d.remaining ?? Math.max(0, d.inventory - d.currentOrders),
+    soldOut: d.status === 'SOLD_OUT',
     pickupLocation: d.pickupLocation,
-    expiresAt: d.expiresAt,
-    // Derive cuisine label from chef's cuisine field
-    cuisine: d.chef?.cuisine ?? 'Caribbean',
+    expiresAt: new Date(d.expiresAt).toISOString(),
+    cuisine: 'Caribbean',
     mealSlot: d.mealSlot,
     imageIndex: d.imageIndex ?? 1,
-    imageUrl: d.imageUrl ?? null,
+    imageUrl: null,
     tags: d.tags ?? [],
-    status: d.status as Drop['status'],
+    status: d.status,
+    isSecret: d.isSecret ?? false,
   };
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+function mapChef(c: any): Chef {
+  return {
+    id: c._id, name: c.name, handle: c.handle, rating: c.rating,
+    totalDrops: c.totalDrops, successfulDrops: c.successfulDrops,
+    isVerified: c.isVerified, cuisine: c.cuisine, region: c.region,
+    points: c.points, rank: c.rank,
+  };
+}
+
+function mapOrder(o: any): Order {
+  return {
+    id: o._id,
+    dropId: o.dropId,
+    dropTitle: o.dropTitle ?? '',
+    chefName: o.chefName ?? '',
+    price: o.price,
+    effectivePrice: o.effectivePrice,
+    orderedAt: new Date(o._creationTime).toISOString(),
+    status: o.status === 'CANCELLED' ? 'cancelled' : o.status === 'FULFILLED' ? 'confirmed' : 'pending',
+    minOrders: 0,
+    currentOrders: 0,
+    expiresAt: '',
+    pickupToken: o.pickupToken,
+    escrowStatus: o.escrowStatus,
+    paymentMethod: o.paymentMethod,
+  };
+}
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [drops, setDrops] = useState<Drop[]>([]);
-  const [chefs, setChefs] = useState<Chef[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const convex = useConvex();
+  const { token: sessionToken } = useAuth();
+  const [guestToken, setGuestToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
-  const [orderedDropIds, setOrderedDropIds] = useState<Set<string>>(new Set());
-  const [isLoadingDrops, setIsLoadingDrops] = useState(true);
-  const [dropsError, setDropsError] = useState<string | null>(null);
-  const userIdRef = useRef<string>('');
 
-  // ── Bootstrap: load local state + fetch live data ──────────────────────────
-
+  // Guest identity — only needed while logged out.
   useEffect(() => {
     (async () => {
-      try {
-        // Restore local state
-        const [ordersJson, profileJson, dropOrdersJson, storedUserId] = await Promise.all([
-          AsyncStorage.getItem(ORDERS_KEY),
-          AsyncStorage.getItem(PROFILE_KEY),
-          AsyncStorage.getItem(DROP_ORDERS_KEY),
-          AsyncStorage.getItem(USER_ID_KEY),
-        ]);
-        if (ordersJson) setOrders(JSON.parse(ordersJson));
-        if (profileJson) setProfile(JSON.parse(profileJson));
-        if (dropOrdersJson) {
-          const ids: string[] = JSON.parse(dropOrdersJson);
-          setOrderedDropIds(new Set(ids));
-        }
-        // Stable anonymous ID
-        if (storedUserId) {
-          userIdRef.current = storedUserId;
-        } else {
-          const newId = `anon_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-          userIdRef.current = newId;
-          await AsyncStorage.setItem(USER_ID_KEY, newId);
-        }
-      } catch (_) { /* non-fatal */ }
-
-      // Fetch live drops + chefs from API
-      await fetchDropsAndChefs();
+      if (sessionToken) return;
+      const stored = await AsyncStorage.getItem(GUEST_TOKEN_KEY);
+      if (stored) {
+        setGuestToken(stored);
+        return;
+      }
+      const { guestToken: issued } = await convex.mutation(api.orders.issueGuestToken, {});
+      await AsyncStorage.setItem(GUEST_TOKEN_KEY, issued);
+      setGuestToken(issued);
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionToken, convex]);
 
-  const fetchDropsAndChefs = useCallback(async () => {
-    setIsLoadingDrops(true);
-    setDropsError(null);
-    try {
-      const [dropsRes, chefsRes] = await Promise.all([
-        apiFetch<{ drops: ApiDrop[] }>('/drops'),
-        apiFetch<{ chefs: Chef[] }>('/chefs'),
-      ]);
+  // ── Reactive live data — no manual fetch/refresh plumbing needed ──────────
+  const dropsRaw = useQuery(api.drops.list, {});
+  const chefsRaw = useQuery(api.chefs.list, {});
+  const ordersRaw = useQuery(
+    api.orders.listMine,
+    sessionToken || guestToken ? { sessionToken: sessionToken ?? undefined, guestToken: guestToken ?? undefined } : 'skip',
+  );
 
-      // Always replace state from the API — empty DB = empty app, no demo data
-      setDrops(dropsRes.drops.map(apiDropToLocal));
-      setChefs(chefsRes.chefs);
-    } catch (err: any) {
-      console.warn('[FFC] API unreachable — showing seed data:', err?.message);
-      setDropsError(err?.message ?? 'Could not reach server');
-      // Keep fallback data already in state
-    } finally {
-      setIsLoadingDrops(false);
-    }
-  }, []);
+  const drops = (dropsRaw ?? []).map(mapDrop);
+  const chefs = (chefsRaw ?? []).map(mapChef);
+  const orders = (ordersRaw ?? []).map(mapOrder);
+  const orderedDropIds = new Set(orders.filter((o) => o.status !== 'cancelled').map((o) => o.dropId));
+  const isLoadingDrops = dropsRaw === undefined;
+  const dropsError = null;
 
-  // ── Persistence helpers ────────────────────────────────────────────────────
+  const placeOrderMutation = useMutation(api.orders.place);
+  const cancelOrderMutation = useMutation(api.orders.cancel);
 
-  const saveOrders = useCallback(async (newOrders: Order[], newOrderedIds: Set<string>) => {
-    await Promise.all([
-      AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(newOrders)),
-      AsyncStorage.setItem(DROP_ORDERS_KEY, JSON.stringify([...newOrderedIds])),
-    ]);
-  }, []);
-
-  const saveProfile = useCallback(async (p: UserProfile) => {
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-  }, []);
-
-  // ── preOrder ───────────────────────────────────────────────────────────────
-
-  const preOrder = useCallback(async (drop: Drop, paymentMethod: 'DIGITAL' | 'CASH' = 'DIGITAL', extraHeaders: Record<string, string> = {}) => {
+  const preOrder = useCallback(async (drop: Drop, paymentMethod: 'DIGITAL' | 'CASH' = 'DIGITAL') => {
     if (drop.soldOut || drop.status === 'SOLD_OUT' || (drop.inventory > 0 && drop.remaining <= 0)) {
       throw new Error('This drop is SOLD OUT');
     }
-    // Optimistically update local UI
-    const optimisticOrder: Order = {
-      id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      dropId: drop.id,
-      dropTitle: drop.title,
-      chefName: drop.chef.name,
-      price: drop.price,
-      orderedAt: new Date().toISOString(),
-      status: 'pending',
-      minOrders: drop.minOrders,
-      currentOrders: drop.currentOrders + 1,
-      expiresAt: drop.expiresAt,
+    await placeOrderMutation({
+      dropId: drop.id as Id<'drops'>,
       paymentMethod,
-      escrowStatus: paymentMethod === 'CASH' ? 'CASH' : 'HELD',
-    };
-
-    const newOrders = [optimisticOrder, ...orders];
-    const newOrderedIds = new Set([...orderedDropIds, drop.id]);
-    const newProfile: UserProfile = {
-      ...profile,
-      walletBalance: profile.walletBalance + drop.price,
-      ordersCount: profile.ordersCount + 1,
-      points: profile.points + Math.round(drop.price * 10),
-    };
-
-    setDrops(prev => prev.map(d =>
-      d.id === drop.id
-        ? { ...d, currentOrders: d.currentOrders + 1, remaining: Math.max(0, d.remaining - 1) }
-        : d
-    ));
-    setOrders(newOrders);
-    setOrderedDropIds(newOrderedIds);
-    setProfile(newProfile);
-
-    await Promise.all([saveOrders(newOrders, newOrderedIds), saveProfile(newProfile)]);
-
-    // Post to API in background — update order ID if successful
-    try {
-      const res = await apiFetch<{
-        order: { id: string; pickupToken?: string; escrowStatus?: Order['escrowStatus']; paymentMethod?: 'DIGITAL' | 'CASH'; effectivePrice?: number };
-        drop: { currentOrders: number; remaining?: number; status: string; justUnlocked: boolean; justSoldOut?: boolean };
-      }>('/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...extraHeaders },
-        body: JSON.stringify({ userId: userIdRef.current, dropId: drop.id, paymentMethod }),
-      });
-
-      // Swap local placeholder ID with server ID + attach QR token + effective price
-      setOrders(prev => prev.map(o =>
-        o.id === optimisticOrder.id
-          ? { ...o, id: res.order.id, pickupToken: res.order.pickupToken, escrowStatus: res.order.escrowStatus, paymentMethod: res.order.paymentMethod, effectivePrice: res.order.effectivePrice }
-          : o
-      ));
-      // Sync live inventory from server (inventory engine result)
-      setDrops(prev => prev.map(d =>
-        d.id === drop.id
-          ? {
-              ...d,
-              currentOrders: res.drop.currentOrders,
-              remaining: res.drop.remaining ?? Math.max(0, d.inventory - res.drop.currentOrders),
-              status: res.drop.status as Drop['status'],
-              soldOut: res.drop.status === 'SOLD_OUT',
-            }
-          : d
-      ));
-    } catch (err: any) {
-      // Do not leave a false "Pre-Ordered" state when the server rejected the
-      // order. The server is the source of truth for inventory and orders.
-      setOrders(orders);
-      setOrderedDropIds(orderedDropIds);
-      setProfile(profile);
-      setDrops(prev => prev.map(d =>
-        d.id === drop.id
-          ? { ...d, currentOrders: drop.currentOrders, remaining: drop.remaining, soldOut: drop.soldOut, status: drop.status }
-          : d
-      ));
-      await Promise.all([saveOrders(orders, orderedDropIds), saveProfile(profile)]);
-      throw err;
-    }
-  }, [orders, orderedDropIds, profile, saveOrders, saveProfile]);
-
-  // ── cancelOrder ────────────────────────────────────────────────────────────
+      sessionToken: sessionToken ?? undefined,
+      guestToken: guestToken ?? undefined,
+    });
+    // No optimistic local state needed — Convex's reactive queries above
+    // (ordersRaw / dropsRaw) update every subscribed screen automatically
+    // the instant the mutation commits.
+  }, [placeOrderMutation, sessionToken, guestToken]);
 
   const cancelOrder = useCallback(async (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
+    await cancelOrderMutation({
+      orderId: orderId as Id<'orders'>,
+      sessionToken: sessionToken ?? undefined,
+      guestToken: guestToken ?? undefined,
+    });
+  }, [cancelOrderMutation, sessionToken, guestToken]);
 
-    const newOrders = orders.map(o =>
-      o.id === orderId ? { ...o, status: 'cancelled' as const } : o
-    );
-    const newOrderedIds = new Set([...orderedDropIds]);
-    newOrderedIds.delete(order.dropId);
-    const newProfile: UserProfile = {
-      ...profile,
-      walletBalance: Math.max(0, profile.walletBalance - order.price),
-      ordersCount: Math.max(0, profile.ordersCount - 1),
-    };
+  const getDropById = useCallback((id: string) => drops.find((d) => d.id === id), [drops]);
 
-    setOrders(newOrders);
-    setOrderedDropIds(newOrderedIds);
-    setDrops(prev => prev.map(d =>
-      d.id === order.dropId ? { ...d, currentOrders: Math.max(0, d.currentOrders - 1) } : d
-    ));
-    setProfile(newProfile);
-
-    await Promise.all([saveOrders(newOrders, newOrderedIds), saveProfile(newProfile)]);
-
-    // Cancel on server — only if it's a real (non-local-optimistic) order ID
-    if (!orderId.startsWith('local_')) {
-      try {
-        await apiFetch(`/orders/${orderId}/cancel`, { method: 'PATCH' });
-      } catch (err: any) {
-        console.warn('[FFC] Cancel API call failed (local state still cancelled):', err?.message);
-      }
-    }
-  }, [orders, orderedDropIds, profile, saveOrders, saveProfile]);
-
-  const getDropById = useCallback((id: string) => drops.find(d => d.id === id), [drops]);
+  const refreshDrops = useCallback(async () => {
+    // Reactive queries stay live on their own — kept as a no-op for screens
+    // that still call refreshDrops() on pull-to-refresh.
+  }, []);
 
   return (
     <AppContext.Provider value={{
@@ -389,7 +246,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       preOrder,
       cancelOrder,
       getDropById,
-      refreshDrops: fetchDropsAndChefs,
+      refreshDrops,
     }}>
       {children}
     </AppContext.Provider>

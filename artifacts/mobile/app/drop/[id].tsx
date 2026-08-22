@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
-import { useApp, type Drop, API_BASE } from '@/contexts/AppContext';
+import { useApp, type Drop } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DUMMY_DROPS } from '@/lib/dummyDrops';
 
@@ -32,7 +32,7 @@ const DROP_IMAGES: { [key: number]: ReturnType<typeof require> } = {
 /** Resolve the hero image source — prefer the chef-uploaded photo, fall back to bundled stock. */
 function heroSource(drop: Drop): any {
   if (drop.imageUrl) {
-    return { uri: `${API_BASE}/drops/${drop.id}/photo` };
+    return { uri: drop.imageUrl };
   }
   return DROP_IMAGES[drop.imageIndex] ?? DROP_IMAGES[1];
 }
@@ -89,40 +89,17 @@ export default function DropDetailScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { getDropById, orderedDropIds, preOrder } = useApp();
-  const { hasClubPass, authHeaders, token, isLoading: authLoading } = useAuth();
+  const { hasClubPass } = useAuth();
   const [paymentMethod, setPaymentMethod] = useState<'DIGITAL' | 'CASH'>('DIGITAL');
   const [isOrdering, setIsOrdering] = useState(false);
-  // Overlay for fields only available from the individual-drop endpoint (e.g. originalPrice)
-  const [dropDetail, setDropDetail] = useState<Partial<Drop>>({});
 
   const isDummy = id?.startsWith('dummy-');
   const drop = isDummy ? (DUMMY_DROPS[id ?? ''] ?? null) : getDropById(id);
   const secs = useCountdown(drop?.expiresAt ?? new Date().toISOString());
 
-  // Fetch the individual drop with auth headers so Club Pass members get originalPrice.
-  // Re-runs when id changes (clears stale detail) or when token changes (auth state resolved).
-  // Uses AbortController so navigating away or re-running cannot merge a stale response.
-  useEffect(() => {
-    setDropDetail({});
-    if (!id || authLoading || isDummy) return;
-    const controller = new AbortController();
-    const requestedId = id;
-    fetch(`${API_BASE}/drops/${requestedId}`, {
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      credentials: 'include',
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then((data: Drop | null) => {
-        // Only merge if the response belongs to the drop currently on screen
-        if (data && data.id === requestedId) setDropDetail(data);
-      })
-      .catch(() => { /* aborted or network error — silently fall back to list data */ });
-    return () => controller.abort();
-  }, [id, token, authLoading]);
-
-  // Merge: prefer fresh detail-endpoint fields when available
-  const effectiveDrop = drop ? { ...drop, ...dropDetail } : drop;
+  // Convex's drops.list query above is already reactive and live — no
+  // separate detail fetch needed, it updates in place as inventory changes.
+  const effectiveDrop = drop;
 
   // Entry animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -184,7 +161,7 @@ export default function DropDetailScreen() {
     setIsOrdering(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     try {
-      await preOrder(effectiveDrop!, paymentMethod, authHeaders());
+      await preOrder(effectiveDrop!, paymentMethod);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         paymentMethod === 'CASH' ? 'Reservation Confirmed' : 'Pre-order Confirmed',

@@ -1,19 +1,17 @@
 /**
- * AuthContext — lightweight authentication layer for mobile
- *
- * Stores the session Bearer token in AsyncStorage.
- * Provides login(), logout(), authHeaders(), and subscription state (hasClubPass).
- * Works alongside AppContext (which handles drops/orders independently).
+ * AuthContext — session token lives in AsyncStorage, verified server-side by
+ * Convex on every call (lib/auth.ts's HMAC session token — same scheme, now
+ * checked inside Convex functions instead of Express middleware).
  */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { API_BASE } from './AppContext';
+import { useMutation, useQuery, useConvex } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 
 const AUTH_TOKEN_KEY = '@ffc_auth_token';
-const AUTH_USER_KEY  = '@ffc_auth_user';
 
 export interface AuthUser {
   id:     string;
@@ -24,7 +22,6 @@ export interface AuthUser {
   chefId?: string | null;
   chefVerified?: boolean | null;
   chefVerificationStatus?: string | null;
-  chefRejectionReason?: string | null;
 }
 
 interface AuthContextValue {
@@ -34,66 +31,60 @@ interface AuthContextValue {
   hasClubPass:       boolean;
   clubPassExpiry:    string | null;
   login:             (email: string, password: string) => Promise<void>;
+  register:          (name: string, email: string, password: string, area?: string) => Promise<void>;
   logout:            () => Promise<void>;
   refreshSubscription: () => Promise<void>;
-  /** Returns Authorization header object if logged in, else empty object */
+  /**
+   * @deprecated Convex mutations take `sessionToken` as a plain argument —
+   * this only exists for screens not yet migrated off the old REST fetch
+   * pattern (chef studio, wallet, create-drop, earnings, apply-chef, scan,
+   * club-pass). Those screens still call the retired Express API and will
+   * not work until ported to Convex queries/mutations.
+   */
   authHeaders:       () => Record<string, string>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]               = useState<AuthUser | null>(null);
-  const [token, setToken]             = useState<string | null>(null);
-  const [isLoading, setIsLoading]     = useState(true);
-  const [hasClubPass, setHasClubPass] = useState(false);
-  const [clubPassExpiry, setClubPassExpiry] = useState<string | null>(null);
+  const convex = useConvex();
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // ── Subscription check ────────────────────────────────────────────────────
+  const loginMutation = useMutation(api.auth.login);
+  const registerMutation = useMutation(api.auth.register);
+  const setPushTokenMutation = useMutation(api.auth.setPushToken);
 
-  const checkSubscription = useCallback(async (userId: string, bearerToken: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/subscriptions/${userId}`, {
-        headers: { Authorization: `Bearer ${bearerToken}` },
-        credentials: 'include',
-      });
-      if (!res.ok) return;
-      const data = await res.json() as { isActive: boolean; subscription?: { expiresAt: string } | null };
-      setHasClubPass(data.isActive);
-      setClubPassExpiry(data.subscription?.expiresAt ?? null);
-    } catch {
-      // Non-fatal — subscription state stays false
-    }
-  }, []);
+  // `me` is a reactive query — user profile updates live everywhere the
+  // instant it changes server-side (e.g. chef verification approval).
+  const me = useQuery(api.auth.me, token ? { sessionToken: token } : 'skip');
+  const user: AuthUser | null = me
+    ? {
+        id: me.id, name: me.name, email: me.email, role: me.role, area: me.area,
+        chefId: me.chefId, chefVerified: me.chefVerified, chefVerificationStatus: me.chefVerificationStatus,
+      }
+    : null;
 
-  const refreshSubscription = useCallback(async () => {
-    if (user && token) await checkSubscription(user.id, token);
-  }, [user, token, checkSubscription]);
-
-  // ── Restore session from AsyncStorage on mount ────────────────────────────
+  const subscription = useQuery(api.subscriptions.mine, token ? { sessionToken: token } : 'skip');
+  const hasClubPass = subscription?.isActive ?? false;
+  const clubPassExpiry = subscription?.subscription
+    ? new Date(subscription.subscription.expiresAt).toISOString()
+    : null;
 
   useEffect(() => {
     (async () => {
       try {
-        const [storedToken, storedUser] = await Promise.all([
-          AsyncStorage.getItem(AUTH_TOKEN_KEY),
-          AsyncStorage.getItem(AUTH_USER_KEY),
-        ]);
-        if (storedToken && storedUser) {
-          const parsedUser = JSON.parse(storedUser) as AuthUser;
-          setToken(storedToken);
-          setUser(parsedUser);
-          // Re-register push token and check subscription in the background
-          registerPushToken(storedToken);
-          checkSubscription(parsedUser.id, storedToken);
+        const stored = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+        if (stored) {
+          setToken(stored);
+          registerPushToken(stored);
         }
       } catch (_) { /* non-fatal */ }
       finally { setIsLoading(false); }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Register the device's Expo push token with the API (best-effort). */
   const registerPushToken = useCallback(async (bearerToken: string) => {
     try {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -102,10 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
-      if (finalStatus !== 'granted') {
-        console.log('[Push] Notification permission not granted — skipping token registration');
-        return;
-      }
+      if (finalStatus !== 'granted') return;
 
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
@@ -124,62 +112,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? await Notifications.getExpoPushTokenAsync({ projectId })
         : await Notifications.getExpoPushTokenAsync();
       const expoPushToken = tokenData.data;
-      if (!expoPushToken) {
-        console.warn('[Push] getExpoPushTokenAsync returned no token');
-        return;
-      }
+      if (!expoPushToken) return;
 
-      const res = await fetch(`${API_BASE}/auth/push-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${bearerToken}`,
-        },
-        body: JSON.stringify({ expoPushToken }),
-      });
-      if (!res.ok) {
-        console.warn('[Push] Failed to store push token on server:', res.status);
-      } else {
-        console.log('[Push] Push token registered successfully');
-      }
+      await setPushTokenMutation({ sessionToken: bearerToken, expoPushToken });
     } catch (err) {
       console.warn('[Push] Push token registration error:', err);
     }
-  }, []);
+  }, [setPushTokenMutation]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error((body as any).error ?? `Login failed (${res.status})`);
-    }
-    const data = await res.json() as { token: string; user: AuthUser };
-    await Promise.all([
-      AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token),
-      AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user)),
-    ]);
+    const data = await loginMutation({ email, password });
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
     setToken(data.token);
-    setUser(data.user);
-    // Background tasks — non-blocking
     registerPushToken(data.token);
-    checkSubscription(data.user.id, data.token);
-  }, [registerPushToken, checkSubscription]);
+  }, [loginMutation, registerPushToken]);
+
+  const register = useCallback(async (name: string, email: string, password: string, area?: string) => {
+    const data = await registerMutation({ name, email, password, area });
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    setToken(data.token);
+    registerPushToken(data.token);
+  }, [registerMutation, registerPushToken]);
 
   const logout = useCallback(async () => {
-    await Promise.all([
-      AsyncStorage.removeItem(AUTH_TOKEN_KEY),
-      AsyncStorage.removeItem(AUTH_USER_KEY),
-    ]);
+    await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
     setToken(null);
-    setUser(null);
-    setHasClubPass(false);
-    setClubPassExpiry(null);
-    fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+  }, []);
+
+  const refreshSubscription = useCallback(async () => {
+    // Reactive query above stays current on its own — kept for callers that
+    // still invoke refreshSubscription() explicitly after subscribe/cancel.
   }, []);
 
   const authHeaders = useCallback((): Record<string, string> => {
@@ -190,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{
       user, token, isLoading,
       hasClubPass, clubPassExpiry,
-      login, logout, refreshSubscription, authHeaders,
+      login, register, logout, refreshSubscription, authHeaders,
     }}>
       {children}
     </AuthContext.Provider>

@@ -18,8 +18,13 @@ import {
 import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import { AppProvider } from '@/contexts/AppContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+
+const convex = new ConvexReactClient(process.env['EXPO_PUBLIC_CONVEX_URL']!, {
+  unsavedChangesWarning: false,
+});
 
 SplashScreen.preventAutoHideAsync();
 
@@ -115,17 +120,19 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <KeyboardProvider>
-              <AuthProvider>
-                <AppProvider>
-                  <RootLayoutNav />
-                </AppProvider>
-              </AuthProvider>
-            </KeyboardProvider>
-          </GestureHandlerRootView>
-        </QueryClientProvider>
+        <ConvexProvider client={convex}>
+          <QueryClientProvider client={queryClient}>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <KeyboardProvider>
+                <AuthProvider>
+                  <AppProvider>
+                    <RootLayoutNav />
+                  </AppProvider>
+                </AuthProvider>
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </QueryClientProvider>
+        </ConvexProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );
