@@ -276,6 +276,38 @@ function RejectedCard({
   );
 }
 
+function NoProfileCard({ onApply, signedIn }: { onApply: () => void; signedIn: boolean }) {
+  const colors = useColors();
+  return (
+    <GlassView intensity={30} style={styles.statusCard}>
+      <LinearGradient
+        colors={['rgba(212,175,55,0.08)', 'transparent']}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[styles.statusCardAccent, { backgroundColor: 'rgba(212,175,55,0.18)' }]}>
+        <MaterialCommunityIcons name="chef-hat" size={22} color="#D4AF37" />
+      </View>
+      <View style={styles.statusCardBody}>
+        <Text style={[styles.statusCardTitle, { color: colors.gold }]}>Become a Chef</Text>
+        <Text style={[styles.statusCardText, { color: colors.mutedForeground }]}>
+          {signedIn
+            ? 'Post your own drops, build a following, and get paid — apply to unlock Studio.'
+            : 'Sign in, then apply to become a chef to unlock Studio.'}
+        </Text>
+        <Pressable
+          style={({ pressed }) => [styles.reapplyBtn, { opacity: pressed ? 0.8 : 1 }]}
+          onPress={onApply}
+        >
+          <MaterialCommunityIcons name="chef-hat" size={15} color="#0A0A0A" />
+          <Text style={styles.reapplyBtnText}>
+            {signedIn ? 'Apply Now' : 'Sign In & Apply'}
+          </Text>
+        </Pressable>
+      </View>
+    </GlassView>
+  );
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function StudioScreen() {
@@ -332,19 +364,9 @@ export default function StudioScreen() {
             <ActivityIndicator color={colors.gold} />
           </GlassView>
         ) : chefState === 'unauthenticated' ? (
-          <GlassView intensity={30} style={[styles.chefCard, styles.walletUnavailable]}>
-            <Ionicons name="person-outline" size={20} color={colors.mutedForeground} />
-            <Text style={[styles.walletUnavailableText, { color: colors.mutedForeground }]}>
-              Sign in as a verified chef to access Studio.
-            </Text>
-          </GlassView>
+          <NoProfileCard signedIn={false} onApply={() => router.push('/apply-chef')} />
         ) : chefState === 'no-profile' ? (
-          <GlassView intensity={30} style={[styles.chefCard, styles.walletUnavailable]}>
-            <Ionicons name="restaurant-outline" size={20} color={colors.mutedForeground} />
-            <Text style={[styles.walletUnavailableText, { color: colors.mutedForeground }]}>
-              Apply to become a chef to unlock Studio.
-            </Text>
-          </GlassView>
+          <NoProfileCard signedIn={true} onApply={() => router.push('/apply-chef')} />
         ) : chefState === 'pending' ? (
           <PendingCard />
         ) : chefState === 'rejected' ? (

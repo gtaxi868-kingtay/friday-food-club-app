@@ -161,7 +161,15 @@ export const listMine = query({
       orders.map(async (o) => {
         const drop = await ctx.db.get(o.dropId);
         const chef = drop ? await ctx.db.get(drop.chefId) : null;
-        return { ...o, dropTitle: drop?.title ?? null, chefName: chef?.name ?? null, dropStatus: drop?.status ?? null };
+        return {
+          ...o,
+          dropTitle: drop?.title ?? null,
+          chefName: chef?.name ?? null,
+          dropStatus: drop?.status ?? null,
+          minOrders: drop?.minOrders ?? 0,
+          currentOrders: drop?.currentOrders ?? 0,
+          dropExpiresAt: drop?.expiresAt ?? null,
+        };
       }),
     );
     return withDrop.sort((a, b) => b._creationTime - a._creationTime);
