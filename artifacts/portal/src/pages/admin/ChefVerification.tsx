@@ -1,13 +1,7 @@
 import { useState, Fragment } from "react";
-import {
-  useListAdminChefs,
-  useVerifyChef,
-  useRejectChef,
-  useGetPlatformConfig,
-  useAdminCreditChefWallet,
-  getListAdminChefsQueryKey,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
+import { useSession } from "@/components/SessionProvider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,25 +17,23 @@ import {
 type CreditEntry = {
   amount?: number | null;
   note?: string | null;
-  createdAt?: string | null;
+  createdAt?: number | null;
 };
 
 type AdminChef = {
-  id?: string;
+  _id: string;
   name?: string;
   handle?: string;
   cuisine?: string;
   region?: string;
   isVerified?: boolean;
   verificationStatus?: string;
-  foodBadgeUrl?: string | null;
-  nationalIdUrl?: string | null;
+  foodBadgeUploadId?: string | null;
+  nationalIdUploadId?: string | null;
   rejectionReason?: string | null;
-  submittedAt?: string | null;
+  submittedAt?: number | null;
   totalDrops?: number;
   walletBalance?: number | null;
-  lastAdminCredit?: string | null;
-  lastAdminCreditNote?: string | null;
   creditHistory?: CreditEntry[];
 };
 
@@ -57,16 +49,16 @@ function fmtCurrency(n: number | null | undefined): string {
   }).format(n);
 }
 
-function fmtDate(s: string | null | undefined): string {
-  if (!s) return "—";
-  return new Date(s).toLocaleDateString("en-TT", {
+function fmtDate(ms: number | null | undefined): string {
+  if (!ms) return "—";
+  return new Date(ms).toLocaleDateString("en-TT", {
     day: "numeric", month: "short", year: "numeric",
   });
 }
 
-function fmtDateTime(s: string | null | undefined): string {
-  if (!s) return "—";
-  return new Date(s).toLocaleString("en-TT", {
+function fmtDateTime(ms: number | null | undefined): string {
+  if (!ms) return "—";
+  return new Date(ms).toLocaleString("en-TT", {
     day: "numeric", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
@@ -145,16 +137,22 @@ function CreditLedger({ credits }: { credits: CreditEntry[] }) {
 // ── Doc Preview ───────────────────────────────────────────────────────────────
 function DocPreview({
   label,
-  url,
+  uploadId,
+  sessionToken,
   icon: Icon,
 }: {
   label: string;
-  url: string | null | undefined;
+  uploadId: string | null | undefined;
+  sessionToken: string;
   icon: React.ComponentType<{ className?: string }>;
 }) {
   const [open, setOpen] = useState(false);
+  const viewUrl = useQuery(
+    api.uploads.getSignedUrl,
+    open && uploadId ? { sessionToken, uploadId: uploadId as any } : "skip",
+  );
 
-  if (!url) {
+  if (!uploadId) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground italic">
         <Icon className="w-4 h-4 opacity-40" />
@@ -162,9 +160,6 @@ function DocPreview({
       </div>
     );
   }
-
-  const isObjectPath = !url.startsWith("http");
-  const viewUrl = isObjectPath ? `/api/storage/objects/${url.replace(/^\/objects\//, "")}` : url;
 
   return (
     <div className="space-y-2">
@@ -182,27 +177,24 @@ function DocPreview({
           >
             {open ? "Hide" : "Preview"}
           </Button>
-          <a href={viewUrl} target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5">
-              <ExternalLink className="w-3 h-3" /> Open
-            </Button>
-          </a>
+          {viewUrl && (
+            <a href={viewUrl} target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5">
+                <ExternalLink className="w-3 h-3" /> Open
+              </Button>
+            </a>
+          )}
         </div>
       </div>
       {open && (
         <div className="rounded-lg overflow-hidden border border-border bg-secondary/20">
-          <img
-            src={viewUrl}
-            alt={label}
-            className="w-full max-h-72 object-contain"
-            onError={e => {
-              (e.target as HTMLImageElement).style.display = "none";
-              (e.target as HTMLImageElement).insertAdjacentHTML(
-                "afterend",
-                `<div class="p-8 text-center text-sm text-muted-foreground">Could not load preview — <a href="${viewUrl}" target="_blank" class="underline">open directly</a></div>`
-              );
-            }}
-          />
+          {viewUrl === undefined ? (
+            <div className="p-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+          ) : viewUrl === null ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">Could not load preview</div>
+          ) : (
+            <img src={viewUrl} alt={label} className="w-full max-h-72 object-contain" />
+          )}
         </div>
       )}
     </div>
@@ -213,12 +205,14 @@ function DocPreview({
 function PendingCard({
   chef,
   freezeThreshold,
+  sessionToken,
   onVerify,
   onReject,
   isPending,
 }: {
   chef: AdminChef;
   freezeThreshold: number;
+  sessionToken: string;
   onVerify: (id: string) => void;
   onReject: (id: string, reason: string) => void;
   isPending: boolean;
@@ -273,9 +267,9 @@ function PendingCard({
 
         {/* Document previews */}
         <div className="space-y-4 p-4 rounded-lg bg-secondary/20 border border-border">
-          <DocPreview label="Food Badge" url={chef.foodBadgeUrl} icon={FileImage} />
+          <DocPreview label="Food Badge" uploadId={chef.foodBadgeUploadId} sessionToken={sessionToken} icon={FileImage} />
           <div className="border-t border-border/50" />
-          <DocPreview label="National ID" url={chef.nationalIdUrl} icon={IdCard} />
+          <DocPreview label="National ID" uploadId={chef.nationalIdUploadId} sessionToken={sessionToken} icon={IdCard} />
         </div>
 
         {/* Approve */}
@@ -283,7 +277,7 @@ function PendingCard({
           <div className="flex gap-3">
             <Button
               className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={() => onVerify(chef.id!)}
+              onClick={() => onVerify(chef._id)}
               disabled={isPending}
             >
               {isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
@@ -319,7 +313,7 @@ function PendingCard({
                 variant="destructive"
                 size="sm"
                 className="flex-1"
-                onClick={() => onReject(chef.id!, reason)}
+                onClick={() => onReject(chef._id, reason)}
                 disabled={isPending}
               >
                 {isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <X className="w-4 h-4 mr-2" />}
@@ -343,20 +337,22 @@ function PendingCard({
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function ChefVerification() {
-  const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useSession();
+  const sessionToken = token ?? "";
+  const args = token ? { sessionToken } : "skip";
 
-  const { data: chefsData, isLoading } = useListAdminChefs({
-    query: { queryKey: getListAdminChefsQueryKey() },
-  });
+  const chefsData = useQuery(api.admin.listChefs, args as any);
+  const isLoading = chefsData === undefined;
 
-  // Platform config provides the configurable freeze threshold
-  const { data: platformConfig } = useGetPlatformConfig();
+  const platformConfig = useQuery(api.config.get, {});
   const freezeThreshold = platformConfig?.walletFreezeThreshold ?? -50;
 
-  const { mutate: verifyChef, isPending: verifying } = useVerifyChef();
-  const { mutate: rejectChef, isPending: rejecting } = useRejectChef();
-  const { mutate: creditWallet } = useAdminCreditChefWallet();
+  const verifyChefMutation = useMutation(api.admin.verifyChef);
+  const rejectChefMutation = useMutation(api.admin.rejectChef);
+  const creditWalletMutation = useMutation(api.admin.creditChefWallet);
+  const [verifying, setVerifying] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   // Per-chef inline credit form state
   const [walletForms, setWalletForms] = useState<Record<string, WalletForm>>({});
@@ -370,93 +366,71 @@ export default function ChefVerification() {
     setWalletForms(prev => ({ ...prev, [chefId]: { ...getWalletForm(chefId), ...patch } }));
 
   const toggleCreditForm = (chef: AdminChef) => {
-    if (openCreditId === chef.id) {
+    if (openCreditId === chef._id) {
       setOpenCreditId(null);
     } else {
-      setOpenCreditId(chef.id!);
+      setOpenCreditId(chef._id);
       // Generate a fresh idempotency key each time the form is opened so that a
       // new submission cannot accidentally reuse the key from a prior session.
       const freshKey = crypto.randomUUID();
       // Pre-fill the deficit when balance is negative
       const balance = chef.walletBalance ?? 0;
-      const currentForm = getWalletForm(chef.id!);
-      setWalletForm(chef.id!, {
+      const currentForm = getWalletForm(chef._id);
+      setWalletForm(chef._id, {
         idempotencyKey: freshKey,
         amount: !currentForm.amount && balance < 0 ? Math.abs(balance).toFixed(2) : currentForm.amount,
       });
     }
   };
 
-  const handleWalletCredit = (chef: AdminChef) => {
-    const form = getWalletForm(chef.id!);
+  const handleWalletCredit = async (chef: AdminChef) => {
+    const form = getWalletForm(chef._id);
     const amount = parseFloat(form.amount);
     if (!amount || amount <= 0) {
       toast({ title: "Invalid Amount", description: "Enter a positive credit amount.", variant: "destructive" });
       return;
     }
-    setCreditingChefId(chef.id!);
-    creditWallet(
-      { id: chef.id!, data: { amount, note: form.note || undefined, idempotencyKey: form.idempotencyKey } },
-      {
-        onSuccess: (data: any) => {
-          queryClient.invalidateQueries({ queryKey: getListAdminChefsQueryKey() });
-          // Reset form with a fresh idempotency key so a subsequent open cannot
-          // replay the same key against the server's 60-second cache.
-          setWalletForms(prev => ({ ...prev, [chef.id!]: { amount: "", note: "", idempotencyKey: crypto.randomUUID() } }));
-          setOpenCreditId(null);
-          toast({
-            title: "Wallet Credited ✓",
-            description: `${chef.name}'s new balance is ${fmtCurrency(data.newWalletBalance)}.`,
-          });
-        },
-        onError: (err: any) => {
-          const msg = err?.response?.data?.error ?? "Failed to credit wallet.";
-          toast({ title: "Credit Failed", description: msg, variant: "destructive" });
-        },
-        onSettled: () => setCreditingChefId(null),
-      }
-    );
+    setCreditingChefId(chef._id);
+    try {
+      const result = await creditWalletMutation({
+        sessionToken, chefId: chef._id as any, amount,
+        note: form.note || undefined, idempotencyKey: form.idempotencyKey,
+      });
+      setWalletForms(prev => ({ ...prev, [chef._id]: { amount: "", note: "", idempotencyKey: crypto.randomUUID() } }));
+      setOpenCreditId(null);
+      toast({
+        title: "Wallet Credited ✓",
+        description: `${chef.name}'s new balance is ${fmtCurrency(result.newWalletBalance)}.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Credit Failed", description: err?.data?.message ?? "Failed to credit wallet.", variant: "destructive" });
+    } finally {
+      setCreditingChefId(null);
+    }
   };
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListAdminChefsQueryKey() });
-
-  const handleVerify = (id: string) => {
-    verifyChef(
-      { id },
-      {
-        onSuccess: (data: any) => {
-          invalidate();
-          const notified = data?.notificationSent === true;
-          toast({
-            title: "Chef Verified ✓",
-            description: notified
-              ? "Creator account is now active. Push notification queued to chef's device."
-              : "Creator account is now active.",
-          });
-        },
-        onError: () => toast({ title: "Error", description: "Verification failed.", variant: "destructive" }),
-      }
-    );
+  const handleVerify = async (id: string) => {
+    setVerifying(true);
+    try {
+      await verifyChefMutation({ sessionToken, chefId: id as any });
+      toast({ title: "Chef Verified ✓", description: "Creator account is now active." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.data?.message ?? "Verification failed.", variant: "destructive" });
+    } finally {
+      setVerifying(false);
+    }
   };
 
-  const handleReject = (id: string, reason: string) => {
-    rejectChef(
-      { id, data: { reason: reason.trim() || undefined } } as any,
-      {
-        onSuccess: (data: any) => {
-          invalidate();
-          const notified = data?.notificationSent === true;
-          toast({
-            title: "Application Rejected",
-            description: notified
-              ? "Application rejected. Push notification queued to chef's device."
-              : "Application rejected.",
-            variant: "destructive",
-          });
-        },
-        onError: () => toast({ title: "Error", description: "Rejection failed.", variant: "destructive" }),
-      }
-    );
+  const handleReject = async (id: string, reason: string) => {
+    setRejecting(true);
+    try {
+      await rejectChefMutation({ sessionToken, chefId: id as any, reason: reason.trim() || undefined });
+      toast({ title: "Application Rejected", description: "Application rejected.", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.data?.message ?? "Rejection failed.", variant: "destructive" });
+    } finally {
+      setRejecting(false);
+    }
   };
 
   const chefs = (chefsData?.chefs ?? []) as AdminChef[];
@@ -500,9 +474,10 @@ export default function ChefVerification() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {pendingChefs.map(chef => (
               <PendingCard
-                key={chef.id}
+                key={chef._id}
                 chef={chef}
                 freezeThreshold={freezeThreshold}
+                sessionToken={sessionToken}
                 onVerify={handleVerify}
                 onReject={handleReject}
                 isPending={verifying || rejecting}
@@ -531,7 +506,7 @@ export default function ChefVerification() {
               </thead>
               <tbody className="divide-y divide-border">
                 {rejectedChefs.map(chef => (
-                  <tr key={chef.id} className="hover:bg-secondary/20 transition-colors align-top">
+                  <tr key={chef._id} className="hover:bg-secondary/20 transition-colors align-top">
                     <td className="px-6 py-4 font-medium">{chef.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{chef.handle}</td>
                     <td className="px-6 py-4">
@@ -579,12 +554,12 @@ export default function ChefVerification() {
               <tbody className="divide-y divide-border">
                 {verifiedChefs.map(chef => {
                   const isFrozen = typeof chef.walletBalance === "number" && chef.walletBalance <= freezeThreshold;
-                  const isOpen = openCreditId === chef.id;
-                  const form = getWalletForm(chef.id!);
-                  const isSubmitting = creditingChefId === chef.id;
+                  const isOpen = openCreditId === chef._id;
+                  const form = getWalletForm(chef._id);
+                  const isSubmitting = creditingChefId === chef._id;
 
                   return (
-                    <Fragment key={chef.id}>
+                    <Fragment key={chef._id}>
                       {/* Chef row */}
                       <tr
                         className={[
@@ -656,7 +631,7 @@ export default function ChefVerification() {
                                     step="0.01"
                                     placeholder="0.00"
                                     value={form.amount}
-                                    onChange={e => setWalletForm(chef.id!, { amount: e.target.value })}
+                                    onChange={e => setWalletForm(chef._id, { amount: e.target.value })}
                                     className="pl-10 bg-background text-sm h-8"
                                     disabled={isSubmitting}
                                     autoFocus
@@ -669,7 +644,7 @@ export default function ChefVerification() {
                                   type="text"
                                   placeholder="e.g. Settlement for October drops"
                                   value={form.note}
-                                  onChange={e => setWalletForm(chef.id!, { note: e.target.value })}
+                                  onChange={e => setWalletForm(chef._id, { note: e.target.value })}
                                   className="bg-background text-sm h-8 max-w-xs"
                                   disabled={isSubmitting}
                                 />

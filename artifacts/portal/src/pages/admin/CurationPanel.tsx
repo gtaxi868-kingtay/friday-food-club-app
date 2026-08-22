@@ -4,7 +4,10 @@
  * Lets admins pin specific drops to the top of the buyer feed with a gold
  * "Admin Find" badge. Featured drops are sorted first in GET /api/drops.
  */
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
+import { useSession } from "@/components/SessionProvider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -24,55 +27,46 @@ interface AdminDrop {
   isFeatured: boolean;
 }
 
-const DROPS_QK = ["admin", "drops", "curation"];
-
-async function fetchAdminDrops(): Promise<{ drops: AdminDrop[] }> {
-  const res = await fetch("/api/admin/drops");
-  if (!res.ok) throw new Error("Failed to fetch drops");
-  return res.json();
-}
-
-async function toggleFeatured(id: string): Promise<{ id: string; isFeatured: boolean }> {
-  const res = await fetch(`/api/admin/drops/${id}/featured`, { method: "PATCH" });
-  if (!res.ok) throw new Error("Failed to toggle");
-  return res.json();
-}
-
 const STATUS_STYLE: Record<string, string> = {
   ACTIVE:    "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  UNLOCKED:  "bg-blue-500/10   text-blue-400   border-blue-500/20",
   SOLD_OUT:  "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  COMPLETED: "bg-secondary     text-muted-foreground border-border",
+  EXPIRED:   "bg-secondary     text-muted-foreground border-border",
   CANCELLED: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
 export default function CurationPanel() {
-  const qc = useQueryClient();
   const { toast } = useToast();
+  const { token } = useSession();
+  const sessionToken = token ?? "";
 
-  const { data, isLoading } = useQuery({ queryKey: DROPS_QK, queryFn: fetchAdminDrops });
+  const rawDrops = useQuery(api.admin.listDrops, token ? { sessionToken } : "skip");
+  const isLoading = rawDrops === undefined;
+  const drops: AdminDrop[] = (rawDrops?.drops ?? []).map((d: any) => ({
+    id: d._id, title: d.title, mealSlot: d.mealSlot, status: d.status, price: d.price,
+    chefId: d.chefId, chefName: d.chefName, currentOrders: d.currentOrders, inventory: d.inventory,
+    expiresAt: new Date(d.expiresAt).toISOString(), isFeatured: !!d.isFeatured,
+  }));
 
-  const { mutate: toggle, isPending } = useMutation({
-    mutationFn: toggleFeatured,
-    onSuccess: (result) => {
-      qc.setQueryData(DROPS_QK, (old: any) => ({
-        ...old,
-        drops: old.drops.map((d: AdminDrop) =>
-          d.id === result.id ? { ...d, isFeatured: result.isFeatured } : d
-        ),
-      }));
+  const toggleMutation = useMutation(api.admin.toggleFeatured);
+  const [isPending, setIsPending] = useState(false);
+
+  const toggle = async (id: string) => {
+    setIsPending(true);
+    try {
+      const result = await toggleMutation({ sessionToken, dropId: id as any });
       toast({
         title: result.isFeatured ? "Pinned as Admin Find ✦" : "Removed from Spotlight",
         description: result.isFeatured
           ? "This drop now appears at the top of the buyer feed with a gold badge."
           : "Drop has been removed from the Admin Finds spotlight.",
       });
-    },
-    onError: () =>
-      toast({ title: "Failed", description: "Could not update featured status.", variant: "destructive" }),
-  });
+    } catch {
+      toast({ title: "Failed", description: "Could not update featured status.", variant: "destructive" });
+    } finally {
+      setIsPending(false);
+    }
+  };
 
-  const drops      = data?.drops ?? [];
   const featured   = drops.filter(d => d.isFeatured);
   const unfeatured = drops.filter(d => !d.isFeatured);
 

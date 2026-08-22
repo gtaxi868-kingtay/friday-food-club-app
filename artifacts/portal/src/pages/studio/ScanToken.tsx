@@ -1,49 +1,58 @@
 import { useState } from "react";
 import { useSession } from "@/components/SessionProvider";
-import { useVerifyPickup } from "@workspace/api-client-react";
+import { useMutation } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Camera, QrCode, CheckCircle2, Banknote } from "lucide-react";
-import { FulfillmentResult } from "@workspace/api-client-react";
+
+interface FulfillmentResult {
+  dropTitle: string | null;
+  paymentMethod: string;
+  gross: number;
+  chefShare: number;
+  platformShare: number;
+  chefWalletBalance: number;
+  cashCollected: number | null;
+}
 
 export default function ScanToken() {
-  const { user } = useSession();
+  const { user, token: sessionToken } = useSession();
   const { toast } = useToast();
-  const [token, setToken] = useState("");
+  const [pickupToken, setPickupToken] = useState("");
   const [result, setResult] = useState<FulfillmentResult | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
-  const { mutate: verifyPickup, isPending } = useVerifyPickup();
+  const verifyMutation = useMutation(api.fulfillment.verify);
 
-  const handleVerify = (e: React.FormEvent) => {
+  const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token.trim() || !user?.chefId) return;
+    if (!pickupToken.trim() || !user?.chefId || !sessionToken) return;
 
-    verifyPickup(
-      { data: { pickupToken: token.trim(), chefId: user.chefId } },
-      {
-        onSuccess: (data) => {
-          setResult(data);
-          setToken("");
-          const isCash = (data as any).paymentMethod === 'CASH';
-          toast({
-            title: "Verification Successful",
-            description: isCash
-              ? "Cash order confirmed. Platform fee debited from your wallet."
-              : "Pickup confirmed. Escrow has been released to your wallet.",
-          });
-        },
-        onError: () => {
-          toast({
-            title: "Verification Failed",
-            description: "Invalid or already used token.",
-            variant: "destructive",
-          });
-          setResult(null);
-        }
-      }
-    );
+    setIsPending(true);
+    try {
+      const data = await verifyMutation({ sessionToken, pickupToken: pickupToken.trim() });
+      setResult(data);
+      setPickupToken("");
+      const isCash = data.paymentMethod === 'CASH';
+      toast({
+        title: "Verification Successful",
+        description: isCash
+          ? "Cash order confirmed. Platform fee debited from your wallet."
+          : "Pickup confirmed. Escrow has been released to your wallet.",
+      });
+    } catch {
+      toast({
+        title: "Verification Failed",
+        description: "Invalid or already used token.",
+        variant: "destructive",
+      });
+      setResult(null);
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -75,15 +84,15 @@ export default function ScanToken() {
                   </div>
                   <Input 
                     placeholder="FFC-XXXXXXXX-XXXX" 
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
+                    value={pickupToken}
+                    onChange={(e) => setPickupToken(e.target.value)}
                     className="pl-10 h-14 text-lg font-mono tracking-widest bg-secondary/30 uppercase"
                   />
                 </div>
               </div>
               <Button 
                 type="submit" 
-                disabled={isPending || !token.trim()} 
+                disabled={isPending || !pickupToken.trim()} 
                 className="w-full h-12 text-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}

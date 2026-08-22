@@ -95,6 +95,7 @@ export const me = query({
       chefId: user.chefId ?? null,
       chefVerified: chef?.isVerified ?? null,
       chefVerificationStatus: chef?.verificationStatus ?? null,
+      chefRejectionReason: chef?.rejectionReason ?? null,
       isMember: activeSub !== null,
     };
   },

@@ -1,20 +1,7 @@
 import { useState } from "react";
-import { 
-  useGetAdminStats, 
-  useGetEscrowLedger, 
-  useListAdminDrops,
-  useListAdminChefs,
-  useOverrideDropStatus,
-  useGetPlatformConfig,
-  useUpdatePlatformConfig,
-  useAdminCreditChefWallet,
-  getGetAdminStatsQueryKey,
-  getGetEscrowLedgerQueryKey,
-  getListAdminDropsQueryKey,
-  getGetPlatformConfigQueryKey,
-  getListAdminChefsQueryKey,
-} from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
+import { useSession } from "@/components/SessionProvider";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,22 +16,33 @@ import { Activity, Landmark, TrendingUp, Users, Package, Save, Loader2, DollarSi
 type WalletForm = { amount: string; note: string };
 
 export default function AdminDashboard() {
-  const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useSession();
+  const sessionToken = token ?? "";
+  const args = token ? { sessionToken } : "skip";
 
-  const { data: stats, isLoading: statsLoading } = useGetAdminStats({ query: { queryKey: getGetAdminStatsQueryKey() } });
-  const { data: ledger, isLoading: ledgerLoading } = useGetEscrowLedger({ query: { queryKey: getGetEscrowLedgerQueryKey() } });
-  const { data: dropsData, isLoading: dropsLoading } = useListAdminDrops({}, { query: { queryKey: getListAdminDropsQueryKey({}) } });
-  const { data: config, isLoading: configLoading } = useGetPlatformConfig({ query: { queryKey: getGetPlatformConfigQueryKey() } });
-  const { data: chefsData, isLoading: chefsLoading } = useListAdminChefs({ query: { queryKey: getListAdminChefsQueryKey() } });
+  const stats = useQuery(api.admin.stats, args as any);
+  const ledger = useQuery(api.fulfillment.ledger, args as any);
+  const dropsData = useQuery(api.admin.listDrops, args as any);
+  const config = useQuery(api.config.get, {});
+  const chefsData = useQuery(api.admin.listChefs, args as any);
+  const coverageData = useQuery(api.admin.coverage, args as any);
 
-  const { mutate: updateStatus } = useOverrideDropStatus();
-  const { mutate: updateConfig, isPending: configUpdating } = useUpdatePlatformConfig();
-  const { mutate: creditWallet, isPending: walletCrediting } = useAdminCreditChefWallet();
+  const statsLoading = stats === undefined;
+  const ledgerLoading = ledger === undefined;
+  const dropsLoading = dropsData === undefined;
+  const configLoading = config === undefined;
+  const chefsLoading = chefsData === undefined;
+
+  const setDropStatusMutation = useMutation(api.admin.setDropStatus);
+  const updateConfigMutation = useMutation(api.config.update);
+  const creditWalletMutation = useMutation(api.admin.creditChefWallet);
+  const addChefMutation = useMutation(api.admin.addChef);
 
   const [feeRate, setFeeRate] = useState<string>("");
   const [passPrice, setPassPrice] = useState<string>("");
   const [freezeThreshold, setFreezeThreshold] = useState<string>("");
+  const [configUpdating, setConfigUpdating] = useState(false);
   const [walletForms, setWalletForms] = useState<Record<string, WalletForm>>({});
   const [creditingChefId, setCreditingChefId] = useState<string | null>(null);
 
@@ -55,22 +53,11 @@ export default function AdminDashboard() {
   const [createdCreds, setCreatedCreds] = useState<{ email: string; tempPassword: string } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Regional coverage
-  const { data: coverageData } = useQuery({
-    queryKey: ["admin", "coverage"],
-    queryFn: async (): Promise<{ regions: Array<{ region: string; activeChefs: number; liveDrops: number }> }> => {
-      const res = await fetch("/api/admin/coverage");
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-    refetchInterval: 60_000,
-  });
-
   // Sync config inputs when loaded
   if (config && !feeRate && !passPrice) {
     setFeeRate((config.platformFeeRate * 100).toString());
     setPassPrice(config.clubPassPrice.toString());
-    setFreezeThreshold(((config as any).walletFreezeThreshold ?? -50).toString());
+    setFreezeThreshold((config.walletFreezeThreshold ?? -50).toString());
   }
 
   const formatCurrency = (amount: number | undefined) => {
@@ -83,34 +70,30 @@ export default function AdminDashboard() {
     return new Intl.NumberFormat('en-US').format(num);
   };
 
-  const handleStatusChange = (dropId: string, newStatus: string) => {
-    updateStatus(
-      { id: dropId, data: { status: newStatus as any } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListAdminDropsQueryKey({}) });
-          toast({ title: "Status Updated", description: "Drop status overridden successfully." });
-        }
-      }
-    );
+  const handleStatusChange = async (dropId: string, newStatus: string) => {
+    try {
+      await setDropStatusMutation({ sessionToken, dropId: dropId as any, status: newStatus as any });
+      toast({ title: "Status Updated", description: "Drop status overridden successfully." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.data?.message ?? "Failed to update status.", variant: "destructive" });
+    }
   };
 
-  const handleConfigSave = () => {
-    updateConfig(
-      {
-        data: {
-          platformFeeRate: parseFloat(feeRate) / 100,
-          clubPassPrice: parseFloat(passPrice),
-          walletFreezeThreshold: parseFloat(freezeThreshold),
-        } as any
-      },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetPlatformConfigQueryKey() });
-          toast({ title: "Config Saved", description: "Platform settings updated." });
-        }
-      }
-    );
+  const handleConfigSave = async () => {
+    setConfigUpdating(true);
+    try {
+      await updateConfigMutation({
+        sessionToken,
+        platformFeeRate: parseFloat(feeRate) / 100,
+        clubPassPrice: parseFloat(passPrice),
+        walletFreezeThreshold: parseFloat(freezeThreshold),
+      });
+      toast({ title: "Config Saved", description: "Platform settings updated." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.data?.message ?? "Failed to save config.", variant: "destructive" });
+    } finally {
+      setConfigUpdating(false);
+    }
   };
 
   const getWalletForm = (chefId: string): WalletForm =>
@@ -123,7 +106,7 @@ export default function AdminDashboard() {
     }));
   };
 
-  const handleWalletCredit = (chefId: string, chefName: string) => {
+  const handleWalletCredit = async (chefId: string, chefName: string) => {
     const form = getWalletForm(chefId);
     const amount = parseFloat(form.amount);
     if (!amount || amount <= 0) {
@@ -131,24 +114,18 @@ export default function AdminDashboard() {
       return;
     }
     setCreditingChefId(chefId);
-    creditWallet(
-      { id: chefId, data: { amount, note: form.note || undefined } },
-      {
-        onSuccess: (data) => {
-          queryClient.invalidateQueries({ queryKey: getListAdminChefsQueryKey() });
-          setWalletForms(prev => ({ ...prev, [chefId]: { amount: "", note: "" } }));
-          toast({
-            title: "Wallet Credited",
-            description: `${chefName}'s balance is now ${formatCurrency(data.newWalletBalance)}.`,
-          });
-        },
-        onError: (err: any) => {
-          const msg = err?.response?.data?.error ?? "Failed to credit wallet.";
-          toast({ title: "Credit Failed", description: msg, variant: "destructive" });
-        },
-        onSettled: () => setCreditingChefId(null),
-      }
-    );
+    try {
+      const result = await creditWalletMutation({ sessionToken, chefId: chefId as any, amount, note: form.note || undefined });
+      setWalletForms(prev => ({ ...prev, [chefId]: { amount: "", note: "" } }));
+      toast({
+        title: "Wallet Credited",
+        description: `${chefName}'s balance is now ${formatCurrency(result.newWalletBalance)}.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Credit Failed", description: err?.data?.message ?? "Failed to credit wallet.", variant: "destructive" });
+    } finally {
+      setCreditingChefId(null);
+    }
   };
 
   // Add Creator handler
@@ -159,19 +136,11 @@ export default function AdminDashboard() {
     }
     setAddChefLoading(true);
     try {
-      const res = await fetch("/api/admin/chefs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addChefForm),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      const data = await addChefMutation({ sessionToken, ...addChefForm });
       setCreatedCreds({ email: data.email, tempPassword: data.tempPassword });
-      queryClient.invalidateQueries({ queryKey: getListAdminChefsQueryKey() });
-      queryClient.invalidateQueries({ queryKey: ["admin", "coverage"] });
       toast({ title: "Creator Added ✓", description: `${addChefForm.name} is now a verified chef on the platform.` });
     } catch (err: any) {
-      toast({ title: "Failed", description: err.message, variant: "destructive" });
+      toast({ title: "Failed", description: err?.data?.message ?? err?.message, variant: "destructive" });
     } finally {
       setAddChefLoading(false);
     }
@@ -183,9 +152,9 @@ export default function AdminDashboard() {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const freezeThresholdValue = (config as any)?.walletFreezeThreshold ?? -50;
+  const freezeThresholdValue = config?.walletFreezeThreshold ?? -50;
   const frozenChefs = (chefsData?.chefs ?? []).filter(
-    (c) => typeof (c as any).walletBalance === "number" && (c as any).walletBalance < 0
+    (c: any) => typeof c.walletBalance === "number" && c.walletBalance < 0
   );
 
   return (
@@ -325,14 +294,14 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {frozenChefs.map((chef) => {
-                const walletBalance = (chef as any).walletBalance as number;
+              {frozenChefs.map((chef: any) => {
+                const walletBalance = chef.walletBalance as number;
                 const isFrozen = walletBalance <= freezeThresholdValue;
-                const form = getWalletForm(chef.id!);
-                const isSubmitting = creditingChefId === chef.id;
+                const form = getWalletForm(chef._id);
+                const isSubmitting = creditingChefId === chef._id;
 
                 return (
-                  <div key={chef.id} className="py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div key={chef._id} className="py-4 flex flex-col sm:flex-row sm:items-center gap-4">
                     {/* Chef info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -360,7 +329,7 @@ export default function AdminDashboard() {
                           step="0.01"
                           placeholder="0.00"
                           value={form.amount}
-                          onChange={(e) => setWalletForm(chef.id!, { amount: e.target.value })}
+                          onChange={(e) => setWalletForm(chef._id, { amount: e.target.value })}
                           className="bg-secondary/30 w-28 pl-10 text-sm"
                           disabled={isSubmitting}
                         />
@@ -369,13 +338,13 @@ export default function AdminDashboard() {
                         type="text"
                         placeholder="Note (optional)"
                         value={form.note}
-                        onChange={(e) => setWalletForm(chef.id!, { note: e.target.value })}
+                        onChange={(e) => setWalletForm(chef._id, { note: e.target.value })}
                         className="bg-secondary/30 w-40 text-sm"
                         disabled={isSubmitting}
                       />
                       <Button
                         size="sm"
-                        onClick={() => handleWalletCredit(chef.id!, chef.name ?? "Chef")}
+                        onClick={() => handleWalletCredit(chef._id, chef.name ?? "Chef")}
                         disabled={isSubmitting || !form.amount || parseFloat(form.amount) <= 0}
                         className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
                       >
@@ -412,7 +381,7 @@ export default function AdminDashboard() {
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-border">
                 <span className="text-muted-foreground text-sm">Platform Fees (digital)</span>
-                <span className="font-mono font-medium text-sm text-primary">{formatCurrency((ledger as any)?.digital?.totalPlatformRevenue)}</span>
+                <span className="font-mono font-medium text-sm text-primary">{formatCurrency(ledger?.digital?.totalPlatformRevenue)}</span>
               </div>
               {/* Cash */}
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5 pt-2">
@@ -420,15 +389,15 @@ export default function AdminDashboard() {
               </p>
               <div className="flex justify-between items-center py-1.5 border-b border-border/50">
                 <span className="text-muted-foreground text-sm">Cash Pending Reconciliation</span>
-                <span className="font-mono font-medium text-sm">{formatNumber((ledger as any)?.cash?.ordersAwaitingPickup)} orders</span>
+                <span className="font-mono font-medium text-sm">{formatNumber(ledger?.cash?.ordersAwaitingPickup)} orders</span>
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-border/50">
                 <span className="text-muted-foreground text-sm">Total Cash Collected</span>
-                <span className="font-mono font-medium text-sm">{formatCurrency((ledger as any)?.cash?.totalCashCollected)}</span>
+                <span className="font-mono font-medium text-sm">{formatCurrency(ledger?.cash?.totalCashCollected)}</span>
               </div>
               <div className="flex justify-between items-center py-1.5">
                 <span className="text-muted-foreground text-sm">Platform Fees (cash)</span>
-                <span className="font-mono font-medium text-sm text-primary">{formatCurrency((ledger as any)?.cash?.totalPlatformFees)}</span>
+                <span className="font-mono font-medium text-sm text-primary">{formatCurrency(ledger?.cash?.totalPlatformFees)}</span>
               </div>
             </CardContent>
           </Card>
@@ -443,37 +412,37 @@ export default function AdminDashboard() {
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Platform Fee (%)</label>
                     <div className="flex space-x-2">
-                      <Input 
-                        type="number" 
-                        value={feeRate} 
-                        onChange={(e) => setFeeRate(e.target.value)} 
+                      <Input
+                        type="number"
+                        value={feeRate}
+                        onChange={(e) => setFeeRate(e.target.value)}
                         className="bg-secondary/30 w-full"
                       />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Club Pass Price (TTD/mo)</label>
-                    <Input 
-                      type="number" 
-                      value={passPrice} 
-                      onChange={(e) => setPassPrice(e.target.value)} 
+                    <Input
+                      type="number"
+                      value={passPrice}
+                      onChange={(e) => setPassPrice(e.target.value)}
                       className="bg-secondary/30"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Wallet Freeze Threshold (TTD)</label>
-                    <Input 
-                      type="number" 
+                    <Input
+                      type="number"
                       value={freezeThreshold}
-                      onChange={(e) => setFreezeThreshold(e.target.value)} 
+                      onChange={(e) => setFreezeThreshold(e.target.value)}
                       className="bg-secondary/30"
                       placeholder="-50"
                     />
                     <p className="text-xs text-muted-foreground">Must be ≤ 0. Chefs below this balance cannot post drops.</p>
                   </div>
-                  <Button 
-                    onClick={handleConfigSave} 
-                    disabled={configUpdating} 
+                  <Button
+                    onClick={handleConfigSave}
+                    disabled={configUpdating}
                     className="w-full bg-secondary hover:bg-secondary/80 text-foreground"
                   >
                     {configUpdating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
@@ -502,8 +471,8 @@ export default function AdminDashboard() {
                 <div className="text-center text-muted-foreground p-8">No drops found.</div>
               ) : (
                 <div className="space-y-4">
-                  {dropsData?.drops?.map((drop) => (
-                    <div key={drop.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-secondary/10 rounded-lg border border-border">
+                  {dropsData?.drops?.map((drop: any) => (
+                    <div key={drop._id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-secondary/10 rounded-lg border border-border">
                       <div className="mb-4 sm:mb-0">
                         <div className="font-medium text-foreground">{drop.title}</div>
                         <div className="text-xs text-muted-foreground">Chef: {drop.chefName} • {formatCurrency(drop.price)}</div>
@@ -511,18 +480,17 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="bg-background">{drop.status}</Badge>
-                        <Select 
-                          value={drop.status} 
-                          onValueChange={(val) => handleStatusChange(drop.id!, val)}
+                        <Select
+                          value={drop.status}
+                          onValueChange={(val) => handleStatusChange(drop._id, val)}
                         >
                           <SelectTrigger className="w-[140px] h-8 text-xs bg-background">
                             <SelectValue placeholder="Override" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="ACTIVE">ACTIVE</SelectItem>
-                            <SelectItem value="UNLOCKED">UNLOCKED</SelectItem>
                             <SelectItem value="SOLD_OUT">SOLD_OUT</SelectItem>
-                            <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+                            <SelectItem value="EXPIRED">EXPIRED</SelectItem>
                             <SelectItem value="CANCELLED">CANCELLED</SelectItem>
                           </SelectContent>
                         </Select>

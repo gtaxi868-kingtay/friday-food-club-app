@@ -1,4 +1,6 @@
-import { useRegister } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -28,29 +30,28 @@ export default function Register() {
     defaultValues: { name: "", email: "", password: "" },
   });
 
-  const { mutate: register, isPending } = useRegister();
+  const registerMutation = useMutation(api.auth.register);
+  const [isPending, setIsPending] = useState(false);
 
-  function onSubmit(values: z.infer<typeof registerSchema>) {
-    register(
-      { data: { ...values, role: "BUYER" } },
-      {
-        onSuccess: () => {
-          toast({
-            title: "Account created",
-            description: "Sign in to access the portal.",
-          });
-          navigate("/login");
-        },
-        onError: (err: any) => {
-          const message = err?.response?.data?.error ?? "An error occurred during registration.";
-          toast({
-            title: "Registration Failed",
-            description: message,
-            variant: "destructive",
-          });
-        },
-      }
-    );
+  async function onSubmit(values: z.infer<typeof registerSchema>) {
+    setIsPending(true);
+    try {
+      await registerMutation(values);
+      toast({
+        title: "Account created",
+        description: "Sign in to access the portal.",
+      });
+      navigate("/login");
+    } catch (err: any) {
+      const message = err?.data?.message ?? err?.message ?? "An error occurred during registration.";
+      toast({
+        title: "Registration Failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (

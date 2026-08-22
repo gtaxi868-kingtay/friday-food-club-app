@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useSession } from "@/components/SessionProvider";
-import { useCreateDrop, useGenerateMarketing, getListDropsQueryKey } from "@workspace/api-client-react";
+import { useMutation, useAction } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,10 +28,9 @@ const dropSchema = z.object({
 });
 
 export default function NewDrop() {
-  const { user } = useSession();
+  const { user, token } = useSession();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const [aiInput, setAiInput] = useState("");
   const [aiTone, setAiTone] = useState<"luxury" | "playful" | "street">("luxury");
@@ -52,30 +51,33 @@ export default function NewDrop() {
     },
   });
 
-  const { mutate: createDrop, isPending: creating } = useCreateDrop();
-  const { mutate: generateMarketing, isPending: generating } = useGenerateMarketing();
+  const createDropMutation = useMutation(api.drops.create);
+  const [creating, setCreating] = useState(false);
+  const marketingAction = useAction(api.ai.marketing);
+  const [generating, setGenerating] = useState(false);
 
-  const handleGenerate = () => {
-    if (!aiInput.trim()) return;
-    generateMarketing(
-      { data: { rawDescription: aiInput, tone: aiTone, dishName: form.getValues('title') } },
-      {
-        onSuccess: (data) => {
-          setMarketingContent(data);
-          toast({
-            title: "Magic applied",
-            description: "Marketing copy generated successfully.",
-          });
-        },
-        onError: () => {
-          toast({
-            title: "Generation Failed",
-            description: "The AI assistant could not generate content right now.",
-            variant: "destructive",
-          });
-        }
-      }
-    );
+  const handleGenerate = async () => {
+    if (!aiInput.trim() || !token) return;
+    setGenerating(true);
+    try {
+      const data = await marketingAction({
+        sessionToken: token, rawDescription: aiInput, tone: aiTone,
+        dishName: form.getValues('title'), isSecret: false,
+      });
+      setMarketingContent(data);
+      toast({
+        title: "Magic applied",
+        description: "Marketing copy generated successfully.",
+      });
+    } catch {
+      toast({
+        title: "Generation Failed",
+        description: "The AI assistant could not generate content right now.",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const applyAiContent = () => {
@@ -84,46 +86,42 @@ export default function NewDrop() {
     if (marketingContent?.hashtags?.length) form.setValue('tags', marketingContent.hashtags.join(', '));
   };
 
-  const onSubmit = (values: z.infer<typeof dropSchema>) => {
-    if (!user?.chefId) return;
-    
+  const onSubmit = async (values: z.infer<typeof dropSchema>) => {
+    if (!user?.chefId || !token) return;
+
     // Parse tags string to array
     const tagsArray = values.tags ? values.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-    createDrop(
-      {
-        data: {
-          chefId: user.chefId,
-          title: values.title,
-          mealSlot: values.mealSlot as any,
-          description: values.description,
-          pickupLocation: values.pickupLocation,
-          price: values.price,
-          inventory: values.inventory,
-          minOrders: values.minOrders,
-          expiresAt: new Date(values.expiresAt).toISOString(),
-          tags: tagsArray,
-          imageIndex: Math.floor(Math.random() * 3) + 1, // Random image 1-3 for demo
-        }
-      },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListDropsQueryKey({ chefId: user.chefId! }) });
-          toast({
-            title: "Drop Launched",
-            description: "Your drop is now live on the marketplace.",
-          });
-          setLocation("/studio");
-        },
-        onError: () => {
-          toast({
-            title: "Error",
-            description: "Could not create drop. Please try again.",
-            variant: "destructive",
-          });
-        }
-      }
-    );
+    setCreating(true);
+    try {
+      await createDropMutation({
+        sessionToken: token,
+        chefId: user.chefId as any,
+        title: values.title,
+        mealSlot: values.mealSlot,
+        description: values.description,
+        pickupLocation: values.pickupLocation,
+        price: values.price,
+        inventory: values.inventory,
+        minOrders: values.minOrders,
+        expiresAt: new Date(values.expiresAt).getTime(),
+        tags: tagsArray,
+        imageIndex: Math.floor(Math.random() * 3) + 1, // Random image 1-3 for demo
+      });
+      toast({
+        title: "Drop Launched",
+        description: "Your drop is now live on the marketplace.",
+      });
+      setLocation("/studio");
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.data?.message ?? "Could not create drop. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (

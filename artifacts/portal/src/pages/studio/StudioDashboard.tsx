@@ -1,5 +1,6 @@
 import { useSession } from "@/components/SessionProvider";
-import { useListDrops, useGetChefWallet, getListDropsQueryKey, getGetChefWalletQueryKey } from "@workspace/api-client-react";
+import { useQuery } from "convex/react";
+import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { Link } from "wouter";
 import { Plus, Wallet, TrendingUp, Clock, Package, CheckCircle2, AlertTriangle, Banknote, XCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,18 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
 export default function StudioDashboard() {
-  const { user } = useSession();
+  const { user, token } = useSession();
   const chefId = user?.chefId || "";
 
-  const { data: dropsData, isLoading: dropsLoading } = useListDrops(
-    { chefId },
-    { query: { enabled: !!chefId, queryKey: getListDropsQueryKey({ chefId }) } }
-  );
+  const rawDrops = useQuery(api.chefs.drops, chefId ? { chefId: chefId as any, limit: 50 } : "skip");
+  const dropsLoading = !!chefId && rawDrops === undefined;
+  const dropsData = { drops: (rawDrops ?? []).map((d: any) => ({ ...d, id: d._id })) };
 
-  const { data: walletData, isLoading: walletLoading } = useGetChefWallet(
-    chefId,
-    { query: { enabled: !!chefId, queryKey: getGetChefWalletQueryKey(chefId) } }
-  );
+  const walletData = useQuery(api.fulfillment.wallet, chefId && token ? { sessionToken: token, chefId: chefId as any } : "skip");
+  const walletLoading = !!chefId && walletData === undefined;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-TT', { style: 'currency', currency: 'TTD' }).format(amount);
@@ -184,7 +182,7 @@ export default function StudioDashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-foreground">
-              {dropsLoading ? <span className="h-8 w-8 block bg-secondary animate-pulse rounded" /> : (dropsData?.drops?.filter(d => d.status === 'ACTIVE' || d.status === 'UNLOCKED').length || 0)}
+              {dropsLoading ? <span className="h-8 w-8 block bg-secondary animate-pulse rounded" /> : (dropsData?.drops?.filter(d => d.status === 'ACTIVE').length || 0)}
             </p>
           </CardContent>
         </Card>
@@ -234,11 +232,11 @@ export default function StudioDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {dropsData.drops.map(drop => (
               <Card key={drop.id} className="bg-card border-card-border overflow-hidden">
-                <div className={`h-1 ${drop.status === 'UNLOCKED' ? 'bg-green-500' : drop.status === 'SOLD_OUT' ? 'bg-yellow-500' : drop.status === 'CANCELLED' ? 'bg-destructive' : 'bg-primary'}`} />
+                <div className={`h-1 ${drop.status === 'SOLD_OUT' ? 'bg-yellow-500' : drop.status === 'CANCELLED' ? 'bg-destructive' : drop.status === 'EXPIRED' ? 'bg-muted-foreground' : 'bg-primary'}`} />
                 <CardContent className="p-5">
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="font-bold text-sm leading-tight">{drop.title}</h3>
-                    <Badge variant="outline" className={`text-xs shrink-0 ml-2 ${drop.status === 'UNLOCKED' ? 'border-green-500/40 text-green-400' : drop.status === 'SOLD_OUT' ? 'border-yellow-500/40 text-yellow-400' : ''}`}>
+                    <Badge variant="outline" className={`text-xs shrink-0 ml-2 ${drop.status === 'SOLD_OUT' ? 'border-yellow-500/40 text-yellow-400' : ''}`}>
                       {drop.status}
                     </Badge>
                   </div>
