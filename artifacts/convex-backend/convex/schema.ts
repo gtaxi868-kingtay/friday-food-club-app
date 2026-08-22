@@ -76,6 +76,11 @@ export default defineSchema({
       v.literal("CANCELLED"),
     ),
     pickupLocation: v.string(),
+    // Denormalized from the selected Spot so the buyer feed/map link never
+    // needs a second query hop — set at creation time, immutable after.
+    locationId: v.optional(v.id("locations")),
+    pickupLat: v.optional(v.number()),
+    pickupLng: v.optional(v.number()),
     expiresAt: v.number(), // epoch ms
     imageIndex: v.number(),
     tags: v.array(v.string()),

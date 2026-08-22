@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSession } from "@/components/SessionProvider";
-import { useMutation, useAction } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
@@ -19,7 +19,7 @@ const dropSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   mealSlot: z.enum(["Breakfast", "Lunch", "Dinner"]),
   description: z.string().min(10, "Description is too short"),
-  pickupLocation: z.string().min(3, "Pickup location is required"),
+  locationId: z.string().min(1, "Pickup spot is required"),
   price: z.coerce.number().min(1, "Price must be greater than 0"),
   inventory: z.coerce.number().min(1, "Inventory must be at least 1").max(500),
   minOrders: z.coerce.number().min(1, "Min orders must be at least 1"),
@@ -36,13 +36,15 @@ export default function NewDrop() {
   const [aiTone, setAiTone] = useState<"luxury" | "playful" | "street">("luxury");
   const [marketingContent, setMarketingContent] = useState<any>(null);
 
+  const spots = useQuery(api.locations.listPublic, {}) ?? [];
+
   const form = useForm<z.infer<typeof dropSchema>>({
     resolver: zodResolver(dropSchema),
     defaultValues: {
       title: "",
       mealSlot: "Dinner",
       description: "",
-      pickupLocation: "",
+      locationId: "",
       price: 0,
       inventory: 10,
       minOrders: 5,
@@ -100,7 +102,7 @@ export default function NewDrop() {
         title: values.title,
         mealSlot: values.mealSlot,
         description: values.description,
-        pickupLocation: values.pickupLocation,
+        locationId: values.locationId as any,
         price: values.price,
         inventory: values.inventory,
         minOrders: values.minOrders,
@@ -263,13 +265,25 @@ export default function NewDrop() {
 
                   <FormField
                     control={form.control}
-                    name="pickupLocation"
+                    name="locationId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Secret Pickup Location</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. The alley behind Queen's Park Oval (exact details given after purchase)" {...field} className="bg-secondary/30" />
-                        </FormControl>
+                        <FormLabel>Pickup Spot</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="bg-secondary/30">
+                              <SelectValue placeholder={spots.length === 0 ? "No spots registered yet" : "Select a registered spot"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {spots.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.name} · {s.address}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Spots are managed by admins in the Spots panel — ask an admin to add one if yours isn't listed.
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}

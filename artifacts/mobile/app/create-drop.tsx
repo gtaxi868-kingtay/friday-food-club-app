@@ -132,6 +132,9 @@ export default function CreateDropScreen() {
   const chefId = status?.chefId ?? null;
   const loadingChef = !!token && status === undefined;
 
+  // ── Registered pickup spots (managed in the admin portal) ─────────────────
+  const spots = useQuery(api.locations.listPublic, {}) ?? [];
+
   // ── Drop fields ──────────────────────────────────────────────────────────
   const [title, setTitle]           = useState('');
   const [description, setDesc]      = useState('');
@@ -139,7 +142,8 @@ export default function CreateDropScreen() {
   const [price, setPrice]           = useState('');
   const [inventory, setInventory]   = useState('');
   const [minOrders, setMinOrders]   = useState('');
-  const [pickupLoc, setPickupLoc]   = useState('');
+  const [locationId, setLocationId] = useState<Id<'locations'> | null>(null);
+  const [showSpotPicker, setShowSpotPicker] = useState(false);
   const [hoursOpen, setHoursOpen]   = useState('6');   // how many hours until expiry
   const [imageIndex, setImageIndex] = useState<1 | 2 | 3>(1);
   const [tags, setTags]             = useState('');    // comma-separated
@@ -245,7 +249,7 @@ export default function CreateDropScreen() {
     if (isNaN(invNum)  || invNum < 1)     { Alert.alert('Invalid', 'Enter a valid plate limit (≥ 1).'); return; }
     if (isNaN(minNum)  || minNum < 1)     { Alert.alert('Invalid', 'Enter a valid minimum orders (≥ 1).'); return; }
     if (minNum > invNum) { Alert.alert('Invalid', 'Minimum orders cannot exceed plate limit.'); return; }
-    if (!pickupLoc.trim()) { Alert.alert('Missing', 'Enter a pickup location.'); return; }
+    if (!locationId) { Alert.alert('Missing', 'Select a pickup spot.'); return; }
     if (isNaN(hoursNum) || hoursNum < 1)  { Alert.alert('Invalid', 'Drop must be open for at least 1 hour.'); return; }
 
     const expiresAt = Date.now() + hoursNum * 3_600_000;
@@ -256,7 +260,7 @@ export default function CreateDropScreen() {
       const drop = await createDropMutation({
         sessionToken: token, chefId: chefId as Id<'chefs'>, title, description,
         mealSlot, price: priceNum, inventory: invNum, minOrders: minNum,
-        pickupLocation: pickupLoc, expiresAt,
+        locationId, expiresAt,
         imageIndex, imageUploadId: photoUploadId ?? undefined, tags: tagsArr,
         isSecret: isSecretDrop,
       });
@@ -504,8 +508,43 @@ export default function CreateDropScreen() {
           </View>
         </View>
 
-        <Field label="Pickup Location *" value={pickupLoc} onChangeText={setPickupLoc}
-          placeholder="34 Queen St, Port of Spain" />
+        {/* Pickup Spot */}
+        <View style={styles.fieldWrap}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Pickup Spot *</Text>
+          {spots.length === 0 ? (
+            <Text style={[styles.fieldHint, { color: colors.mutedForeground }]}>
+              No pickup spots registered yet — ask an admin to add one in the portal.
+            </Text>
+          ) : (
+            <Pressable
+              onPress={() => setShowSpotPicker(p => !p)}
+              style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderColor: locationId ? colors.gold + '55' : 'rgba(212,175,55,0.18)' }]}
+            >
+              <Text style={{ color: locationId ? colors.foreground : 'rgba(255,255,255,0.25)', fontSize: 15, fontFamily: 'Inter_400Regular' }} numberOfLines={1}>
+                {locationId ? spots.find(s => s.id === locationId)?.name ?? 'Select a spot' : 'Select a registered spot'}
+              </Text>
+              <Ionicons name={showSpotPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+            </Pressable>
+          )}
+          {showSpotPicker && (
+            <GlassView intensity={40} style={styles.picker}>
+              <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+                {spots.map(s => (
+                  <Pressable
+                    key={s.id}
+                    style={[styles.pickerItem, locationId === s.id && { backgroundColor: 'rgba(212,175,55,0.12)' }]}
+                    onPress={() => { setLocationId(s.id); setShowSpotPicker(false); }}
+                  >
+                    <Text style={[styles.pickerItemText, { color: locationId === s.id ? colors.gold : colors.foreground }]}>
+                      {s.name}
+                    </Text>
+                    <Text style={[styles.pickerItemSub, { color: colors.mutedForeground }]}>{s.address}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </GlassView>
+          )}
+        </View>
         <Field label="Tags" value={tags} onChangeText={setTags}
           placeholder="oxtail, sunday, trinidadian, comfort food"
           hint="Comma-separated — up to 5 tags" />
@@ -715,6 +754,13 @@ const styles = StyleSheet.create({
   inputMultiline: { minHeight: 90, paddingTop: 12 },
   rowFields: { flexDirection: 'row', gap: 12 },
   slotRow: { flexDirection: 'row', gap: 8 },
+  picker: {
+    borderRadius: 14, overflow: 'hidden', borderWidth: 1,
+    borderColor: 'rgba(212,175,55,0.15)', marginTop: 4,
+  },
+  pickerItem: { paddingHorizontal: 16, paddingVertical: 12 },
+  pickerItemText: { fontSize: 14, fontFamily: 'Inter_500Medium' },
+  pickerItemSub: { fontSize: 11, fontFamily: 'Inter_400Regular', marginTop: 2 },
   slotBtnActive: { paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
   slotTextActive: { fontSize: 13, fontFamily: 'Inter_700Bold', color: '#0A0A0A' },
   slotBtnInactive: {

@@ -28,6 +28,23 @@ export const list = query({
   },
 });
 
+/** Unauthenticated — chefs pick a pickup spot when posting a drop, buyers
+ *  read it back to render an "Open in Maps" link. No admin-only detail here. */
+export const listPublic = query({
+  args: {},
+  handler: async (ctx) => {
+    const locations = await ctx.db.query("locations").collect();
+    return locations.map((l) => ({
+      id: l._id,
+      name: l.name,
+      address: l.address,
+      region: l.region,
+      lat: l.lat ?? null,
+      lng: l.lng ?? null,
+    }));
+  },
+});
+
 export const create = mutation({
   args: {
     sessionToken: v.string(),

@@ -44,6 +44,8 @@ export interface Drop {
   status?: 'ACTIVE' | 'SOLD_OUT' | 'EXPIRED' | 'CANCELLED';
   soldOut?: boolean;
   pickupLocation?: string;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
   isSecret?: boolean;
 }
 
@@ -62,6 +64,9 @@ export interface Order {
   pickupToken?: string;
   escrowStatus?: 'HELD' | 'RELEASED' | 'CASH' | 'CASH_RECONCILED';
   paymentMethod?: 'DIGITAL' | 'CASH';
+  pickupLocation?: string | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
 }
 
 export interface UserProfile {
@@ -117,6 +122,8 @@ function mapDrop(d: any): Drop {
     remaining: d.remaining ?? Math.max(0, d.inventory - d.currentOrders),
     soldOut: d.status === 'SOLD_OUT',
     pickupLocation: d.pickupLocation,
+    pickupLat: d.pickupLat ?? null,
+    pickupLng: d.pickupLng ?? null,
     expiresAt: new Date(d.expiresAt).toISOString(),
     cuisine: 'Caribbean',
     mealSlot: d.mealSlot,
@@ -153,6 +160,9 @@ function mapOrder(o: any): Order {
     pickupToken: o.pickupToken,
     escrowStatus: o.escrowStatus,
     paymentMethod: o.paymentMethod,
+    pickupLocation: o.pickupLocation ?? null,
+    pickupLat: o.pickupLat ?? null,
+    pickupLng: o.pickupLng ?? null,
   };
 }
 

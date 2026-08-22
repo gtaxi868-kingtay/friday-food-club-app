@@ -169,6 +169,9 @@ export const listMine = query({
           minOrders: drop?.minOrders ?? 0,
           currentOrders: drop?.currentOrders ?? 0,
           dropExpiresAt: drop?.expiresAt ?? null,
+          pickupLocation: drop?.pickupLocation ?? null,
+          pickupLat: drop?.pickupLat ?? null,
+          pickupLng: drop?.pickupLng ?? null,
         };
       }),
     );

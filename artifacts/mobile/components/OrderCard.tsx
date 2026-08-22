@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import QRCode from 'react-native-qrcode-svg';
 import { useColors } from '@/hooks/useColors';
 import type { Order } from '@/contexts/AppContext';
+import { openInMaps } from '@/lib/maps';
 
 interface Props {
   order: Order;
@@ -131,6 +132,23 @@ export default function OrderCard({ order, onCancel }: Props) {
                   ? `Show this QR · pay $${order.effectivePrice ?? order.price} cash to your chef`
                   : 'Show this to your chef at pickup'}
               </Text>
+              {order.pickupLocation && (
+                <Text style={[styles.pickupAddress, { color: colors.mutedForeground }]}>
+                  <Ionicons name="location-outline" size={11} color={colors.mutedForeground} /> {order.pickupLocation}
+                </Text>
+              )}
+              {!!order.pickupLat && !!order.pickupLng && (
+                <Pressable
+                  onPress={async () => {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    openInMaps(order.pickupLat!, order.pickupLng!, order.pickupLocation ?? undefined);
+                  }}
+                  style={styles.mapsBtn}
+                >
+                  <Ionicons name="navigate" size={13} color="#0A0A0A" />
+                  <Text style={styles.mapsBtnText}>Open in Maps</Text>
+                </Pressable>
+              )}
             </View>
           )}
         </View>
@@ -189,6 +207,12 @@ const styles = StyleSheet.create({
   qrBox: { backgroundColor: '#FFFFFF', padding: 10, borderRadius: 12 },
   tokenText: { fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   tokenHint: { fontSize: 11, fontFamily: 'Inter_400Regular' },
+  pickupAddress: { fontSize: 11, fontFamily: 'Inter_400Regular', textAlign: 'center', marginTop: 2 },
+  mapsBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 8, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#D4AF37',
+  },
+  mapsBtnText: { fontSize: 12, fontFamily: 'Inter_700Bold', color: '#0A0A0A' },
   footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   date: { fontSize: 11, fontFamily: 'Inter_400Regular' },
   cancelBtn: { paddingVertical: 4, paddingHorizontal: 8 },

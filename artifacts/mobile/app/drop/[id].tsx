@@ -22,6 +22,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp, type Drop } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DUMMY_DROPS } from '@/lib/dummyDrops';
+import { openInMaps } from '@/lib/maps';
 
 const DROP_IMAGES: { [key: number]: ReturnType<typeof require> } = {
   1: require('@/assets/images/drop1.jpg'),
@@ -423,6 +424,18 @@ export default function DropDetailScreen() {
                   ? 'This is a permanent pinned venue — available even without a live drop.'
                   : 'Bring your QR code at pickup time to release your order.'}
               </Text>
+              {!!effectiveDrop!.pickupLat && !!effectiveDrop!.pickupLng && (
+                <Pressable
+                  onPress={async () => {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    openInMaps(effectiveDrop!.pickupLat!, effectiveDrop!.pickupLng!, effectiveDrop!.pickupLocation);
+                  }}
+                  style={({ pressed }) => [styles.mapsBtn, { opacity: pressed ? 0.75 : 1 }]}
+                >
+                  <Ionicons name="navigate" size={14} color="#0A0A0A" />
+                  <Text style={styles.mapsBtnText}>Open in Maps</Text>
+                </Pressable>
+              )}
             </GlassView>
           )}
 
@@ -952,6 +965,11 @@ const styles = StyleSheet.create({
   pinnedBadgeText: { fontSize: 9, fontFamily: 'Inter_700Bold', color: '#D4AF37', letterSpacing: 1 },
   locationName: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: '#FFFFFF' },
   locationNote: { fontSize: 12, fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.45)', lineHeight: 17 },
+  mapsBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 10, paddingVertical: 10, borderRadius: 12, backgroundColor: '#D4AF37',
+  },
+  mapsBtnText: { fontSize: 12, fontFamily: 'Inter_700Bold', color: '#0A0A0A' },
   // Preview bar (dummy drops)
   previewBar: {
     flex: 1,

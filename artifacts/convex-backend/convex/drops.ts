@@ -59,7 +59,7 @@ export const create = mutation({
     price: v.number(),
     inventory: v.number(),
     minOrders: v.number(),
-    pickupLocation: v.string(),
+    locationId: v.id("locations"),
     expiresAt: v.number(),
     imageIndex: v.number(),
     imageUploadId: v.optional(v.id("uploads")),
@@ -101,6 +101,9 @@ export const create = mutation({
     const chefExists = await ctx.db.get(args.chefId);
     if (!chefExists) throw new ConvexError({ code: "NOT_FOUND", message: `Chef ${args.chefId} not found` });
 
+    const location = await ctx.db.get(args.locationId);
+    if (!location) throw new ConvexError({ code: "NOT_FOUND", message: "Selected pickup spot not found" });
+
     const dropId = await ctx.db.insert("drops", {
       chefId: args.chefId,
       title: args.title,
@@ -111,7 +114,10 @@ export const create = mutation({
       minOrders: args.minOrders,
       currentOrders: 0,
       status: "ACTIVE",
-      pickupLocation: args.pickupLocation,
+      pickupLocation: `${location.name}, ${location.address}`,
+      locationId: args.locationId,
+      pickupLat: location.lat,
+      pickupLng: location.lng,
       expiresAt: args.expiresAt,
       imageIndex: args.imageIndex,
       tags: args.tags,
