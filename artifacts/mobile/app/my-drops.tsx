@@ -4,7 +4,7 @@
  * Lists all drops posted by the signed-in chef across all statuses:
  * ACTIVE, UNLOCKED, SOLD_OUT, COMPLETED, CANCELLED.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -18,14 +18,15 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE } from '@/contexts/AppContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DropStatus = 'ACTIVE' | 'UNLOCKED' | 'SOLD_OUT' | 'COMPLETED' | 'CANCELLED';
+type DropStatus = 'ACTIVE' | 'SOLD_OUT' | 'EXPIRED' | 'CANCELLED';
 
 interface Drop {
   id: string;
@@ -45,9 +46,8 @@ interface Drop {
 
 const STATUS_CONFIG: Record<DropStatus, { label: string; color: string; bg: string; border: string }> = {
   ACTIVE:    { label: 'Active',    color: '#4CAF50', bg: 'rgba(76,175,80,0.12)',    border: 'rgba(76,175,80,0.25)' },
-  UNLOCKED:  { label: 'Unlocked',  color: '#D4AF37', bg: 'rgba(212,175,55,0.12)',   border: 'rgba(212,175,55,0.25)' },
   SOLD_OUT:  { label: 'Sold Out',  color: '#F5A623', bg: 'rgba(245,166,35,0.12)',   border: 'rgba(245,166,35,0.25)' },
-  COMPLETED: { label: 'Completed', color: '#5C9CF5', bg: 'rgba(92,156,245,0.12)',   border: 'rgba(92,156,245,0.25)' },
+  EXPIRED:   { label: 'Expired',   color: '#5C9CF5', bg: 'rgba(92,156,245,0.12)',   border: 'rgba(92,156,245,0.25)' },
   CANCELLED: { label: 'Cancelled', color: '#888888', bg: 'rgba(136,136,136,0.10)', border: 'rgba(136,136,136,0.20)' },
 };
 
@@ -79,7 +79,7 @@ function formatDate(iso: string) {
 function DropRow({ drop, onPress }: { drop: Drop; onPress: () => void }) {
   const colors = useColors();
   const cfg = STATUS_CONFIG[drop.status] ?? STATUS_CONFIG.CANCELLED;
-  const isExpired = drop.status === 'ACTIVE' || drop.status === 'UNLOCKED';
+  const isExpired = drop.status === 'ACTIVE';
   const expiry = isExpired ? formatExpiry(drop.expiresAt) : formatDate(drop.expiresAt);
 
   const orderPct = drop.inventory > 0
@@ -143,7 +143,7 @@ function DropRow({ drop, onPress }: { drop: Drop; onPress: () => void }) {
       </View>
 
       {/* Progress bar — only for active/unlocked */}
-      {(drop.status === 'ACTIVE' || drop.status === 'UNLOCKED') && (
+      {drop.status === 'ACTIVE' && (
         <View style={[styles.progressTrack, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
           <View
             style={[
@@ -166,61 +166,34 @@ export default function MyDropsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authHeaders } = useAuth();
-
-  const [drops, setDrops] = useState<Drop[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error' | 'unauth'>('loading');
+  const { token } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      // Resolve the chef's own ID first
-      const meRes = await fetch(`${API_BASE}/chefs/me/status`, {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      });
-      if (meRes.status === 401 || meRes.status === 403) {
-        setLoadState('unauth');
-        return;
-      }
-      if (!meRes.ok) { setLoadState('error'); return; }
-      const me = await meRes.json() as { chefId?: string };
-      if (!me.chefId) { setLoadState('unauth'); return; }
+  const status = useQuery(api.chefs.myStatus, token ? { sessionToken: token } : 'skip');
+  const rawDrops = useQuery(api.chefs.drops, status?.chefId ? { chefId: status.chefId as any, limit: 50 } : 'skip');
 
-      // Fetch full drop history for this chef — /chefs/:id/drops returns all
-      // statuses including expired, completed, and cancelled drops without any
-      // expiresAt filter (unlike GET /api/drops which only returns live drops).
-      const dropsRes = await fetch(
-        `${API_BASE}/chefs/${encodeURIComponent(me.chefId)}/drops?limit=50`,
-        {
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        }
-      );
-      if (!dropsRes.ok) { setLoadState('error'); return; }
-      const body = await dropsRes.json() as { drops: Drop[] };
-      // Sort: active/unlocked first, then by expiry descending
-      const sorted = [...(body.drops ?? [])].sort((a, b) => {
-        const priority: Record<string, number> = {
-          ACTIVE: 0, UNLOCKED: 1, SOLD_OUT: 2, COMPLETED: 3, CANCELLED: 4,
-        };
-        const pa = priority[a.status] ?? 5;
-        const pb = priority[b.status] ?? 5;
-        if (pa !== pb) return pa - pb;
-        return new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime();
-      });
-      setDrops(sorted);
-      setLoadState('ok');
-    } catch {
-      setLoadState('error');
-    }
-  }, [authHeaders]);
+  const loadState: 'loading' | 'ok' | 'unauth' =
+    !token ? 'unauth' : status === undefined ? 'loading' : !status.chefId ? 'unauth' : rawDrops === undefined ? 'loading' : 'ok';
 
-  useEffect(() => { load(); }, [load]);
+  const drops: Drop[] = (rawDrops ?? [])
+    .map((d) => ({
+      id: d._id, title: d.title, mealSlot: d.mealSlot, status: d.status as DropStatus,
+      price: d.price, inventory: d.inventory, minOrders: d.minOrders, currentOrders: d.currentOrders,
+      remaining: d.remaining, expiresAt: new Date(d.expiresAt).toISOString(), pickupLocation: d.pickupLocation,
+    }))
+    .sort((a, b) => {
+      const priority: Record<string, number> = { ACTIVE: 0, SOLD_OUT: 1, EXPIRED: 2, CANCELLED: 3 };
+      const pa = priority[a.status] ?? 5;
+      const pb = priority[b.status] ?? 5;
+      if (pa !== pb) return pa - pb;
+      return new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime();
+    });
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    // Convex queries above are reactive/live already — this just gives the
+    // pull-to-refresh gesture a brief, expected visual response.
+    await new Promise((r) => setTimeout(r, 300));
     setRefreshing(false);
   };
 
@@ -277,15 +250,6 @@ export default function MyDropsScreen() {
           </GlassView>
         )}
 
-        {/* Error */}
-        {loadState === 'error' && (
-          <GlassView intensity={30} style={styles.messageCard}>
-            <Ionicons name="cloud-offline-outline" size={24} color={colors.mutedForeground} />
-            <Text style={[styles.messageText, { color: colors.mutedForeground }]}>
-              Could not load drops. Pull down to retry.
-            </Text>
-          </GlassView>
-        )}
 
         {/* Empty state */}
         {loadState === 'ok' && drops.length === 0 && (

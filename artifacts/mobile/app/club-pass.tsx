@@ -5,7 +5,7 @@
  * Subscribe / Cancel to the subscriptions API. On success the AuthContext
  * is updated so the rest of the app reflects active membership immediately.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -18,10 +18,11 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE } from '@/contexts/AppContext';
 
 const BENEFITS = [
   { icon: 'pricetag-outline', text: 'Member pricing on every drop — pay less, eat more' },
@@ -35,72 +36,40 @@ export default function ClubPassScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, token, hasClubPass, clubPassExpiry, refreshSubscription, authHeaders } = useAuth();
+  const { user, token, hasClubPass, clubPassExpiry } = useAuth();
 
-  const [price, setPrice] = useState<number>(5);
-  const [loadingPrice, setLoadingPrice] = useState(true);
+  const config = useQuery(api.config.get, {});
+  const price = config?.clubPassPrice ?? 5;
+  const loadingPrice = config === undefined;
+
+  const subscribeMutation = useMutation(api.subscriptions.subscribe);
+  const cancelMutation = useMutation(api.subscriptions.cancel);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Fetch live price from platform config
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/drops/platform-config`);
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data.clubPassPrice === 'number' && data.clubPassPrice > 0) {
-            setPrice(data.clubPassPrice);
-          }
-        }
-      } catch { /* use default */ }
-      finally { setLoadingPrice(false); }
-    })();
-  }, []);
-
   const handleSubscribe = async () => {
-    if (!user || submitting) return;
+    if (!user || !token || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/subscriptions/${user.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        credentials: 'include',
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? 'Failed to activate Club Pass');
-        return;
-      }
-      await refreshSubscription();
+      await subscribeMutation({ sessionToken: token });
       setSuccess(true);
-    } catch {
-      setError('Network error — please try again');
+    } catch (err: any) {
+      setError(err?.data?.message ?? err?.message ?? 'Failed to activate Club Pass');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleCancel = async () => {
-    if (!user || submitting) return;
+    if (!user || !token || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/subscriptions/${user.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-        credentials: 'include',
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? 'Failed to cancel');
-        return;
-      }
-      await refreshSubscription();
-    } catch {
-      setError('Network error — please try again');
+      await cancelMutation({ sessionToken: token });
+    } catch (err: any) {
+      setError(err?.data?.message ?? err?.message ?? 'Failed to cancel');
     } finally {
       setSubmitting(false);
     }

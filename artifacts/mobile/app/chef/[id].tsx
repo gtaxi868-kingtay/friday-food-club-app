@@ -24,10 +24,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useApp, type Chef } from '@/contexts/AppContext';
-import { API_BASE } from '@/contexts/AppContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,9 +64,7 @@ const MEAL_COLORS: Record<string, string> = {
 };
 
 const STATUS_META: Record<string, { label: string; color: string; icon: string }> = {
-  UNLOCKED:  { label: 'LIVE',      color: '#25D366', icon: 'flash' },
-  PENDING:   { label: 'PENDING',   color: '#F5A623', icon: 'time-outline' },
-  COMPLETED: { label: 'DELIVERED', color: '#4CAF50', icon: 'checkmark-circle' },
+  ACTIVE:    { label: 'LIVE',      color: '#25D366', icon: 'flash' },
   SOLD_OUT:  { label: 'SOLD OUT',  color: '#C41E3A', icon: 'flame' },
   EXPIRED:   { label: 'EXPIRED',   color: '#6B6B6B', icon: 'close-circle-outline' },
   CANCELLED: { label: 'CANCELLED', color: '#6B6B6B', icon: 'ban-outline' },
@@ -147,37 +146,18 @@ function DropHistoryCard({ drop, onPress }: { drop: DropSummary; onPress: () => 
 function DropsSection({ chefId, isRealId }: { chefId: string; isRealId: boolean }) {
   const colors  = useColors();
   const router  = useRouter();
-  const [drops, setDrops]         = useState<DropSummary[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!isRealId) {
-      // Fallback / demo chef — no real DB record
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/chefs/${chefId}/drops?limit=30`);
-      if (!res.ok) {
-        setError(res.status === 404 ? null : 'Could not load drops');
-      } else {
-        const data = await res.json();
-        setDrops(data.drops ?? []);
-      }
-    } catch {
-      setError('No connection to server');
-    } finally {
-      setLoading(false);
-    }
-  }, [chefId, isRealId]);
+  const rawDrops = useQuery(api.chefs.drops, isRealId ? { chefId: chefId as any, limit: 30 } : 'skip');
+  const loading = isRealId && rawDrops === undefined;
+  const drops: DropSummary[] = (rawDrops ?? []).map((d) => ({
+    id: d._id, title: d.title, description: d.description, mealSlot: d.mealSlot,
+    price: d.price, inventory: d.inventory, minOrders: d.minOrders, currentOrders: d.currentOrders,
+    status: d.status, imageIndex: d.imageIndex, tags: d.tags, pickupLocation: d.pickupLocation,
+    expiresAt: new Date(d.expiresAt).toISOString(), createdAt: new Date(d._creationTime).toISOString(),
+  }));
 
-  useEffect(() => { load(); }, [load]);
-
-  const liveDrops = drops.filter(d => d.status === 'UNLOCKED' || d.status === 'PENDING');
-  const pastDrops = drops.filter(d => d.status !== 'UNLOCKED' && d.status !== 'PENDING');
+  const liveDrops = drops.filter(d => d.status === 'ACTIVE');
+  const pastDrops = drops.filter(d => d.status !== 'ACTIVE');
 
   if (!isRealId) {
     return (
@@ -198,21 +178,6 @@ function DropsSection({ chefId, isRealId }: { chefId: string; isRealId: boolean 
       <View style={styles.dropsLoader}>
         <ActivityIndicator color={colors.gold} />
         <Text style={[styles.dropsLoaderText, { color: colors.mutedForeground }]}>Loading drops…</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.emptyHistory}>
-        <GlassView intensity={25} style={styles.emptyCard}>
-          <Ionicons name="cloud-offline-outline" size={32} color={colors.mutedForeground} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Drops unavailable</Text>
-          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>{error}</Text>
-          <Pressable onPress={load} style={styles.retryBtn}>
-            <Text style={[styles.retryText, { color: colors.gold }]}>Try again</Text>
-          </Pressable>
-        </GlassView>
       </View>
     );
   }

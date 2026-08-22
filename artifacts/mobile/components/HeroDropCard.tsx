@@ -16,7 +16,6 @@ import * as Haptics from 'expo-haptics';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import type { Drop } from '@/contexts/AppContext';
-import { API_BASE } from '@/contexts/AppContext';
 
 const DROP_IMAGES: { [key: number]: ReturnType<typeof require> } = {
   1: require('@/assets/images/drop1.jpg'),
@@ -120,7 +119,7 @@ export default function HeroDropCard({ drop, hasOrdered, onPress }: Props) {
       <Image
         source={
           (drop.imageUrl
-            ? { uri: `${API_BASE}/drops/${drop.id}/photo` }
+            ? { uri: drop.imageUrl! }
             : (DROP_IMAGES[drop.imageIndex] ?? DROP_IMAGES[1])) as any
         }
         style={styles.image}

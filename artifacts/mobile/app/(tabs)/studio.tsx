@@ -5,7 +5,7 @@
  * is negative, and disables the "Create Drop" button when the wallet is
  * frozen (below the platform's walletFreezeThreshold).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -15,12 +15,13 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import { useColors } from '@/hooks/useColors';
-import { API_BASE } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import GlassView from '@/components/GlassView';
 
@@ -57,131 +58,49 @@ interface DemoChef {
  */
 type ChefLoadState = 'loading' | 'ok' | 'unauthenticated' | 'no-profile' | 'pending' | 'rejected' | 'unavailable';
 
-function useChefProfile(authHeaders: () => Record<string, string>) {
-  const [chef, setChef] = useState<DemoChef | null>(null);
-  const [loadState, setLoadState] = useState<ChefLoadState>('loading');
-  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+function useChefProfile(token: string | null) {
+  const status = useQuery(api.chefs.myStatus, token ? { sessionToken: token } : 'skip');
+  const isVerifiedChef = status?.role === 'CHEF' || status?.role === 'ADMIN';
+  const chefDetail = useQuery(api.chefs.get, isVerifiedChef && status?.chefId ? { chefId: status.chefId as any } : 'skip');
 
-  const load = useCallback(async () => {
-    try {
-      const res = await globalThis.fetch(`${API_BASE}/chefs/me/status`, {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      });
-      if (res.status === 401 || res.status === 403) {
-        setChef(null);
-        setLoadState('unauthenticated');
-        return;
-      }
-      if (!res.ok) { setChef(null); setLoadState('unavailable'); return; }
-      const data = await res.json() as {
-        chefId?: string; chefName?: string; verificationStatus?: string;
-        isVerified?: boolean; rejectionReason?: string | null;
-      };
+  let loadState: ChefLoadState;
+  let chef: DemoChef | null = null;
+  if (!token) {
+    loadState = 'unauthenticated';
+  } else if (status === undefined) {
+    loadState = 'loading';
+  } else if (!status.chefId) {
+    loadState = 'no-profile';
+  } else if (status.verificationStatus === 'PENDING_REVIEW') {
+    loadState = 'pending';
+  } else if (status.verificationStatus === 'REJECTED') {
+    loadState = 'rejected';
+  } else if (chefDetail === undefined) {
+    loadState = 'loading';
+  } else if (!chefDetail) {
+    loadState = 'unavailable';
+  } else {
+    loadState = 'ok';
+    chef = {
+      id: chefDetail._id, name: chefDetail.name, handle: chefDetail.handle,
+      cuisine: chefDetail.cuisine, region: chefDetail.region, isVerified: chefDetail.isVerified,
+      totalDrops: chefDetail.totalDrops, successfulDrops: chefDetail.successfulDrops,
+      points: chefDetail.points, rank: chefDetail.rank,
+    };
+  }
 
-      // Signed in but no chef application submitted yet
-      if (!data.chefId) { setChef(null); setLoadState('no-profile'); return; }
-
-      // Application pending admin review
-      if (data.verificationStatus === 'PENDING_REVIEW') {
-        setChef(null);
-        setLoadState('pending');
-        return;
-      }
-
-      // Application was rejected — surface the reason
-      if (data.verificationStatus === 'REJECTED') {
-        setChef(null);
-        setRejectionReason(data.rejectionReason ?? null);
-        setLoadState('rejected');
-        return;
-      }
-
-      // Fetch full chef details using the chefId
-      const chef2 = await globalThis.fetch(`${API_BASE}/chefs/${data.chefId}`, {
-        credentials: 'include',
-        headers: authHeaders(),
-      });
-      if (!chef2.ok) { setChef(null); setLoadState('unavailable'); return; }
-      const c = await chef2.json() as {
-        id: string; name: string; handle: string; cuisine: string; region: string;
-        isVerified: boolean; totalDrops: number; successfulDrops: number; points: number; rank: number;
-      };
-      setChef({
-        id: c.id, name: c.name, handle: c.handle,
-        cuisine: c.cuisine, region: c.region,
-        isVerified: c.isVerified,
-        totalDrops: c.totalDrops ?? 0,
-        successfulDrops: c.successfulDrops ?? 0,
-        points: c.points ?? 0,
-        rank: c.rank ?? 999,
-      });
-      setRejectionReason(null);
-      setLoadState('ok');
-    } catch {
-      setChef(null);
-      setLoadState('unavailable');
-    }
-  }, [authHeaders]);
-
-  useEffect(() => { load(); }, [load]);
-  return { chef, loadState, rejectionReason, refresh: load };
+  return { chef, loadState, rejectionReason: status?.rejectionReason ?? null };
 }
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
 type WalletLoadState = 'loading' | 'ok' | 'unauthenticated' | 'unavailable';
 
-function useChefWallet(authHeaders: () => Record<string, string>) {
-  const [wallet, setWallet] = useState<ChefWallet | null>(null);
-  const [loadState, setLoadState] = useState<WalletLoadState>('loading');
-
-  const loadWallet = useCallback(async () => {
-    setLoadState('loading');
-    try {
-      // Authenticated endpoint — includes the Bearer token so the server can
-      // identify which chef's wallet to return.  Falls back gracefully when the
-      // user is not signed in (401) or the request fails (unavailable).
-      const res = await globalThis.fetch(`${API_BASE}/chefs/me/wallet`, {
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders(),
-        },
-      });
-
-      if (res.status === 401 || res.status === 403) {
-        setWallet(null);
-        setLoadState('unauthenticated');
-        return;
-      }
-      if (!res.ok) {
-        setWallet(null);
-        setLoadState('unavailable');
-        return;
-      }
-
-      const data = await res.json() as {
-        walletBalance: number;
-        freezeThreshold: number;
-        isFrozen: boolean;
-      };
-      setWallet({
-        walletBalance: data.walletBalance,
-        freezeThreshold: data.freezeThreshold,
-        isFrozen: data.isFrozen,
-      });
-      setLoadState('ok');
-    } catch {
-      // Network failure — do not fabricate wallet state; show unavailable instead.
-      setWallet(null);
-      setLoadState('unavailable');
-    }
-  }, [authHeaders]);
-
-  useEffect(() => { loadWallet(); }, [loadWallet]);
-
-  return { wallet, loadState, refresh: loadWallet };
+function useChefWallet(token: string | null, isVerifiedChef: boolean) {
+  const raw = useQuery(api.chefs.myWallet, token && isVerifiedChef ? { sessionToken: token } : 'skip');
+  const loadState: WalletLoadState = !token ? 'unauthenticated' : !isVerifiedChef ? 'unavailable' : raw === undefined ? 'loading' : 'ok';
+  const wallet: ChefWallet | null = raw ? { walletBalance: raw.walletBalance, freezeThreshold: raw.freezeThreshold, isFrozen: raw.isFrozen } : null;
+  return { wallet, loadState };
 }
 
 // ── Components ────────────────────────────────────────────────────────────────
@@ -363,25 +282,17 @@ export default function StudioScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authHeaders } = useAuth();
+  const { token } = useAuth();
 
-  const { wallet, loadState: walletState, refresh: refreshWallet } = useChefWallet(authHeaders);
-  const { chef, loadState: chefState, rejectionReason, refresh: refreshChef } = useChefProfile(authHeaders);
+  const { chef, loadState: chefState, rejectionReason } = useChefProfile(token);
+  const { wallet, loadState: walletState } = useChefWallet(token, chefState === 'ok');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Re-fetch wallet + chef stats whenever the Studio tab regains focus — e.g.
-  // after returning from the Create Drop screen — so the frozen banner and the
-  // Create Drop button state reflect the server's latest wallet status.
-  useFocusEffect(
-    useCallback(() => {
-      refreshWallet();
-      refreshChef();
-    }, [refreshWallet, refreshChef])
-  );
-
+  // Convex's queries above are already reactive/live — pull-to-refresh just
+  // gives the gesture its expected brief visual response.
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refreshWallet(), refreshChef()]);
+    await new Promise((r) => setTimeout(r, 300));
     setRefreshing(false);
   };
 

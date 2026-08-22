@@ -13,11 +13,43 @@ import GlassView from '@/components/GlassView';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMutation } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import { useColors } from '@/hooks/useColors';
-import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE, type Drop } from '@/contexts/AppContext';
+import { type Drop } from '@/contexts/AppContext';
 import DropCard from '@/components/DropCard';
 import * as Haptics from 'expo-haptics';
+
+function mapNfcDrop(d: any): Drop {
+  return {
+    id: d._id,
+    title: d.title,
+    description: d.description,
+    chef: d.chef
+      ? {
+          id: d.chef.id, name: d.chef.name, handle: d.chef.handle, rating: d.chef.rating,
+          totalDrops: d.chef.totalDrops, successfulDrops: d.chef.successfulDrops,
+          isVerified: d.chef.isVerified, cuisine: d.chef.cuisine, region: d.chef.region,
+          points: d.chef.points, rank: d.chef.rank,
+        }
+      : { id: '', name: '', handle: '', rating: 0, totalDrops: 0, successfulDrops: 0, isVerified: false, cuisine: '', region: '', points: 0, rank: 0 },
+    price: d.price,
+    inventory: d.inventory,
+    minOrders: d.minOrders,
+    currentOrders: d.currentOrders,
+    remaining: d.remaining ?? Math.max(0, d.inventory - d.currentOrders),
+    soldOut: d.status === 'SOLD_OUT',
+    pickupLocation: d.pickupLocation,
+    expiresAt: new Date(d.expiresAt).toISOString(),
+    cuisine: d.chef?.cuisine ?? 'Caribbean',
+    mealSlot: d.mealSlot,
+    imageIndex: d.imageIndex ?? 1,
+    imageUrl: null,
+    tags: d.tags ?? [],
+    status: d.status,
+    isSecret: d.isSecret ?? false,
+  };
+}
 
 const LOGO_GOLD = require('@/assets/images/logo-gold-transparent.png');
 
@@ -42,7 +74,7 @@ export default function ScanScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authHeaders } = useAuth();
+  const scanMutation = useMutation(api.nfc.scan);
 
   const [mode, setMode] = useState<ScanMode>('location');
   const [state, setState] = useState<ScanState>('idle');
@@ -112,27 +144,8 @@ export default function ScanScreen() {
       stopPulse();
       try {
         const nfcId = DEMO_NFC_IDS[mode];
-        const res = await fetch(`${API_BASE}/nfc/scan`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          credentials: 'include',
-          body: JSON.stringify({ nfcId, type: mode }),
-        });
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          // 404 is expected in demo mode — show "empty" state gracefully
-          if (res.status === 404) {
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            setState('empty');
-          } else {
-            setErrorMsg(body.error ?? 'Scan failed — try again');
-            setState('error');
-          }
-          return;
-        }
-
-        const data: NfcResult = await res.json();
+        const raw = await scanMutation({ nfcId, type: mode });
+        const data: NfcResult = { ...raw, drops: raw.drops.map(mapNfcDrop) } as NfcResult;
         setResult(data);
 
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -146,8 +159,14 @@ export default function ScanScreen() {
             Animated.spring(resultsSlide, { toValue: 0, tension: 80, friction: 12, useNativeDriver: true }),
           ]).start();
         }
-      } catch {
-        setErrorMsg('Network error — check your connection');
+      } catch (err: any) {
+        // No location/keychain match is expected in demo mode — show "empty" gracefully
+        if (err?.data?.code === 'NOT_FOUND') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          setState('empty');
+          return;
+        }
+        setErrorMsg(err?.data?.message ?? err?.message ?? 'Scan failed — try again');
         setState('error');
       }
     }, 2200);

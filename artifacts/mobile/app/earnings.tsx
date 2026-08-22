@@ -4,7 +4,7 @@
  * Shows total all-time earnings from completed drops, current wallet balance,
  * and a per-drop breakdown so chefs can reconcile each payout.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -18,37 +18,21 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE } from '@/contexts/AppContext';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface EarningsDrop {
-  id: string;
-  title: string;
-  chefEarnings: number;
-  orders: number;
-  lastFulfilledAt: string | null;
-}
-
-interface EarningsData {
-  walletBalance: number;
-  freezeThreshold: number;
-  totalEarnings: number;
-  drops: EarningsDrop[];
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string | null) {
-  if (!iso) return '—';
+function fmtDate(ms: number | null) {
+  if (!ms) return '—';
   try {
-    return new Date(iso).toLocaleDateString('en-TT', {
+    return new Date(ms).toLocaleDateString('en-TT', {
       day: 'numeric', month: 'short', year: 'numeric',
     });
-  } catch { return iso; }
+  } catch { return String(ms); }
 }
 
 function fmtTTD(n: number) {
@@ -61,34 +45,15 @@ export default function EarningsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authHeaders } = useAuth();
-
-  const [data, setData] = useState<EarningsData | null>(null);
-  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error' | 'unauth'>('loading');
+  const { token } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoadState('loading');
-    try {
-      const res = await fetch(`${API_BASE}/chefs/me/earnings`, {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      });
-      if (res.status === 401 || res.status === 403) { setLoadState('unauth'); return; }
-      if (!res.ok) { setLoadState('error'); return; }
-      const json = await res.json();
-      setData(json as EarningsData);
-      setLoadState('ok');
-    } catch {
-      setLoadState('error');
-    }
-  }, [authHeaders]);
-
-  useEffect(() => { load(); }, [load]);
+  const data = useQuery(api.chefs.myEarnings, token ? { sessionToken: token } : 'skip');
+  const loadState: 'loading' | 'ok' | 'unauth' = !token ? 'unauth' : data === undefined ? 'loading' : 'ok';
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await new Promise((r) => setTimeout(r, 300));
     setRefreshing(false);
   };
 
@@ -133,16 +98,6 @@ export default function EarningsScreen() {
             <Ionicons name="person-outline" size={24} color={colors.mutedForeground} />
             <Text style={[styles.messageText, { color: colors.mutedForeground }]}>
               Sign in as a verified chef to view your earnings.
-            </Text>
-          </GlassView>
-        )}
-
-        {/* ── Error ───────────────────────────────────────────────── */}
-        {loadState === 'error' && !data && (
-          <GlassView intensity={30} style={styles.messageCard}>
-            <Ionicons name="cloud-offline-outline" size={24} color={colors.mutedForeground} />
-            <Text style={[styles.messageText, { color: colors.mutedForeground }]}>
-              Could not load earnings. Pull down to retry.
             </Text>
           </GlassView>
         )}

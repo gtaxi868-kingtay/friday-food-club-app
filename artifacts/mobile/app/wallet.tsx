@@ -4,7 +4,7 @@
  * Shows live wallet balance, freeze status, cash debt, total earnings,
  * and the full AdminCredit history so chefs understand every settlement.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -18,17 +18,11 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE } from '@/contexts/AppContext';
-
-interface AdminCredit {
-  id: string;
-  amount: number;
-  note: string | null;
-  createdAt: string;
-}
 
 interface WalletData {
   chefId: string;
@@ -37,52 +31,33 @@ interface WalletData {
   isFrozen: boolean;
   cashDebt: number;
   totalEarnings: number;
-  creditHistory: AdminCredit[];
+  creditHistory: { id: string; amount: number; note: string | null; createdAt: number }[];
 }
 
-function formatDate(iso: string) {
+function formatDate(ms: number) {
   try {
-    return new Date(iso).toLocaleDateString('en-TT', {
+    return new Date(ms).toLocaleDateString('en-TT', {
       day: 'numeric', month: 'short', year: 'numeric',
     });
-  } catch { return iso; }
+  } catch { return String(ms); }
 }
 
 export default function WalletScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { authHeaders } = useAuth();
-
-  const [data, setData] = useState<WalletData | null>(null);
-  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error' | 'unauth'>('loading');
+  const { token } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoadState('loading');
-    try {
-      const res = await fetch(`${API_BASE}/chefs/me/wallet`, {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      });
-      if (res.status === 401 || res.status === 403) {
-        setLoadState('unauth');
-        return;
-      }
-      if (!res.ok) { setLoadState('error'); return; }
-      const json = await res.json();
-      setData(json as WalletData);
-      setLoadState('ok');
-    } catch {
-      setLoadState('error');
-    }
-  }, [authHeaders]);
-
-  useEffect(() => { load(); }, [load]);
+  const raw = useQuery(api.chefs.myWallet, token ? { sessionToken: token } : 'skip');
+  const data: WalletData | null = raw
+    ? { ...raw, creditHistory: raw.creditHistory.map((c) => ({ id: c.id, amount: c.amount, note: c.note, createdAt: c.createdAt })) }
+    : null;
+  const loadState: 'loading' | 'ok' | 'unauth' = !token ? 'unauth' : raw === undefined ? 'loading' : 'ok';
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await new Promise((r) => setTimeout(r, 300));
     setRefreshing(false);
   };
 
@@ -129,15 +104,6 @@ export default function WalletScreen() {
             <Ionicons name="person-outline" size={24} color={colors.mutedForeground} />
             <Text style={[styles.messageText, { color: colors.mutedForeground }]}>
               Sign in as a verified chef to view your wallet.
-            </Text>
-          </GlassView>
-        )}
-
-        {loadState === 'error' && !data && (
-          <GlassView intensity={30} style={styles.messageCard}>
-            <Ionicons name="cloud-offline-outline" size={24} color={colors.mutedForeground} />
-            <Text style={[styles.messageText, { color: colors.mutedForeground }]}>
-              Could not load wallet. Pull down to retry.
             </Text>
           </GlassView>
         )}

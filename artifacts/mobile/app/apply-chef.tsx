@@ -27,9 +27,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useMutation } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
+import type { Id } from '@workspace/convex-backend/convex/_generated/dataModel';
 import { useColors } from '@/hooks/useColors';
 import GlassView from '@/components/GlassView';
-import { API_BASE } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 
 const LOGO_GOLD = require('@/assets/images/logo-gold-transparent.png');
@@ -48,45 +50,35 @@ const CUISINE_OPTIONS = [
   'Home Cooking',
 ];
 
-type UploadState = { uri: string | null; objectPath: string | null; uploading: boolean };
+type UploadState = { uri: string | null; uploadId: Id<'uploads'> | null; uploading: boolean };
 
 // ── Upload helper ─────────────────────────────────────────────────────────────
+// Convex has built-in blob storage: generateUploadUrl() mints a direct-PUT
+// URL, we PUT the file bytes to it, then finalize() records ownership.
 
 async function uploadImage(
   uri: string,
   fileName: string,
   mimeType: string,
-  headers: Record<string, string>,
-): Promise<string> {
-  // 1. Fetch file bytes to determine size
+  sessionToken: string,
+  generateUploadUrl: (args: { sessionToken: string }) => Promise<string>,
+  finalize: (args: { sessionToken: string; storageId: Id<'_storage'>; fileName: string; contentType: string; size: number }) => Promise<{ uploadId: Id<'uploads'>; url: string | null }>,
+): Promise<Id<'uploads'>> {
   const fileRes = await fetch(uri);
   const blob = await fileRes.blob();
   const size = blob.size;
 
-  // 2. Request a presigned PUT URL from the API (authenticated)
-  const urlRes = await fetch(`${API_BASE}/uploads/image`, {
+  const postUrl = await generateUploadUrl({ sessionToken });
+  const putRes = await fetch(postUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ name: fileName, size, contentType: mimeType }),
-  });
-  if (!urlRes.ok) {
-    const err = await urlRes.json().catch(() => ({}));
-    throw new Error((err as any).error ?? `Upload failed (${urlRes.status})`);
-  }
-  const { uploadURL, objectPath } = (await urlRes.json()) as {
-    uploadURL: string;
-    objectPath: string;
-  };
-
-  // 3. PUT file bytes directly to GCS presigned URL (no auth needed here)
-  const putRes = await fetch(uploadURL, {
-    method: 'PUT',
     headers: { 'Content-Type': mimeType },
     body: blob,
   });
   if (!putRes.ok) throw new Error('Storage upload failed — please try again');
+  const { storageId } = (await putRes.json()) as { storageId: Id<'_storage'> };
 
-  return objectPath;
+  const { uploadId } = await finalize({ sessionToken, storageId, fileName, contentType: mimeType, size });
+  return uploadId;
 }
 
 // ── Login Gate ────────────────────────────────────────────────────────────────
@@ -183,7 +175,10 @@ function LoginGate({ colors, insets }: { colors: ReturnType<typeof useColors>; i
 export default function ApplyChefScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, token, authHeaders, logout } = useAuth();
+  const { user, token, logout } = useAuth();
+  const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
+  const finalizeUpload = useMutation(api.uploads.finalize);
+  const applyMutation = useMutation(api.chefs.apply);
 
   const [step, setStep] = useState(0);
 
@@ -195,8 +190,8 @@ export default function ApplyChefScreen() {
   const [showCuisinePicker, setShowCuisinePicker] = useState(false);
 
   // Step 2/3 uploads
-  const [foodBadge, setFoodBadge] = useState<UploadState>({ uri: null, objectPath: null, uploading: false });
-  const [nationalId, setNationalId] = useState<UploadState>({ uri: null, objectPath: null, uploading: false });
+  const [foodBadge, setFoodBadge] = useState<UploadState>({ uri: null, uploadId: null, uploading: false });
+  const [nationalId, setNationalId] = useState<UploadState>({ uri: null, uploadId: null, uploading: false });
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
@@ -256,8 +251,8 @@ export default function ApplyChefScreen() {
     setter(s => ({ ...s, uri, uploading: true }));
 
     try {
-      const objectPath = await uploadImage(uri, fileName, mimeType, authHeaders());
-      setter({ uri, objectPath, uploading: false });
+      const uploadId = await uploadImage(uri, fileName, mimeType, token!, generateUploadUrl, finalizeUpload);
+      setter({ uri, uploadId, uploading: false });
     } catch (err: any) {
       setter(s => ({ ...s, uploading: false }));
       Alert.alert('Upload Failed', err.message ?? 'Could not upload. Try again.');
@@ -265,46 +260,39 @@ export default function ApplyChefScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!foodBadge.objectPath || !nationalId.objectPath) {
+    if (!foodBadge.uploadId || !nationalId.uploadId || !token) {
       Alert.alert('Missing Documents', 'Please upload both your Food Badge and National ID.');
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/chefs/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({
-          kitchenName,
-          area,
-          cuisine: cuisine || 'Home Cooking',
-          foodBadgeUrl: foodBadge.objectPath,
-          nationalIdUrl: nationalId.objectPath,
-        }),
+      await applyMutation({
+        sessionToken: token,
+        kitchenName,
+        area,
+        cuisine: cuisine || 'Home Cooking',
+        foodBadgeUploadId: foodBadge.uploadId,
+        nationalIdUploadId: nationalId.uploadId,
       });
-      if (res.status === 409) {
-        const e = await res.json().catch(() => ({}));
-        Alert.alert('Already Applied', (e as any).error ?? 'Application is already under review.');
-        return;
-      }
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error((e as any).error ?? 'Submission failed');
-      }
       // Clear the BUYER token — the next login will produce a CHEF token
       // once the admin approves the application. This prevents stale role access.
       await logout();
       setStep(4);
     } catch (err: any) {
-      Alert.alert('Submission Failed', err.message ?? 'Could not submit. Please try again.');
+      const message = err?.data?.message ?? err?.message ?? 'Submission failed';
+      if (err?.data?.code === 'CONFLICT') {
+        Alert.alert('Already Applied', message);
+      } else {
+        Alert.alert('Submission Failed', message);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   const canNext0 = kitchenName.trim().length >= 2 && area.length > 0;
-  const canNext1 = !!foodBadge.objectPath && !foodBadge.uploading;
-  const canNext2 = !!nationalId.objectPath && !nationalId.uploading;
+  const canNext1 = !!foodBadge.uploadId && !foodBadge.uploading;
+  const canNext2 = !!nationalId.uploadId && !nationalId.uploading;
 
   // ── Application Flow ──────────────────────────────────────────────────────
   return (
@@ -468,15 +456,15 @@ export default function ApplyChefScreen() {
               <View style={[styles.reviewDivider, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
               <ReviewRow
                 label="Food Badge"
-                value={foodBadge.objectPath ? '✓ Uploaded' : '— Missing'}
-                valueColor={foodBadge.objectPath ? '#4ADE80' : '#F87171'}
+                value={foodBadge.uploadId ? '✓ Uploaded' : '— Missing'}
+                valueColor={foodBadge.uploadId ? '#4ADE80' : '#F87171'}
                 colors={colors}
               />
               <View style={[styles.reviewDivider, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
               <ReviewRow
                 label="National ID"
-                value={nationalId.objectPath ? '✓ Uploaded' : '— Missing'}
-                valueColor={nationalId.objectPath ? '#4ADE80' : '#F87171'}
+                value={nationalId.uploadId ? '✓ Uploaded' : '— Missing'}
+                valueColor={nationalId.uploadId ? '#4ADE80' : '#F87171'}
                 colors={colors}
               />
             </GlassView>
@@ -547,7 +535,7 @@ function DocUploadCard({
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1, marginTop: 24 }]}>
       <GlassView intensity={40} style={[styles.uploadCard, {
-        borderColor: state.objectPath ? 'rgba(74,222,128,0.4)' : 'rgba(212,175,55,0.2)',
+        borderColor: state.uploadId ? 'rgba(74,222,128,0.4)' : 'rgba(212,175,55,0.2)',
       }]}>
         {state.uri ? (
           <>
@@ -558,7 +546,7 @@ function DocUploadCard({
                 <Text style={styles.uploadingText}>Uploading…</Text>
               </View>
             )}
-            {!state.uploading && state.objectPath && (
+            {!state.uploading && state.uploadId && (
               <View style={styles.uploadSuccessOverlay}>
                 <View style={styles.uploadSuccessBadge}>
                   <Ionicons name="checkmark-circle" size={24} color="#4ADE80" />

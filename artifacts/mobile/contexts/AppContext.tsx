@@ -5,15 +5,6 @@ import { api } from '@workspace/convex-backend/convex/_generated/api';
 import type { Id } from '@workspace/convex-backend/convex/_generated/dataModel';
 import { useAuth } from './AuthContext';
 
-/**
- * @deprecated The Express/Neo4j API this pointed to is retired — the backend
- * is now Convex (see contexts/AuthContext.tsx and this file's useQuery/
- * useMutation calls). Kept only so still-unmigrated screens (chef studio,
- * wallet, create-drop, earnings, apply-chef, scan, club-pass) compile; their
- * fetch() calls against this will fail until ported to Convex.
- */
-export const API_BASE = '';
-
 // ─── Guest identity ─────────────────────────────────────────────────────────
 // Anonymous checkout needs a server-signed guest token (Convex mutations have
 // no cookie jar) — issued once, persisted, reused on every order call.

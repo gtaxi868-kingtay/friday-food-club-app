@@ -34,14 +34,6 @@ interface AuthContextValue {
   register:          (name: string, email: string, password: string, area?: string) => Promise<void>;
   logout:            () => Promise<void>;
   refreshSubscription: () => Promise<void>;
-  /**
-   * @deprecated Convex mutations take `sessionToken` as a plain argument —
-   * this only exists for screens not yet migrated off the old REST fetch
-   * pattern (chef studio, wallet, create-drop, earnings, apply-chef, scan,
-   * club-pass). Those screens still call the retired Express API and will
-   * not work until ported to Convex queries/mutations.
-   */
-  authHeaders:       () => Record<string, string>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -144,15 +136,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // still invoke refreshSubscription() explicitly after subscribe/cancel.
   }, []);
 
-  const authHeaders = useCallback((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
-
   return (
     <AuthContext.Provider value={{
       user, token, isLoading,
       hasClubPass, clubPassExpiry,
-      login, register, logout, refreshSubscription, authHeaders,
+      login, register, logout, refreshSubscription,
     }}>
       {children}
     </AuthContext.Provider>

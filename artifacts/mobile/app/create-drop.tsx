@@ -24,44 +24,37 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { useMutation, useAction, useQuery } from 'convex/react';
+import { api } from '@workspace/convex-backend/convex/_generated/api';
+import type { Id } from '@workspace/convex-backend/convex/_generated/dataModel';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/contexts/AuthContext';
-import { API_BASE } from '@/contexts/AppContext';
 
 // ── Upload helper (shared pattern with apply-chef.tsx) ────────────────────────
 async function uploadImage(
   uri: string,
   fileName: string,
   mimeType: string,
-  headers: Record<string, string>,
-): Promise<string> {
+  sessionToken: string,
+  generateUploadUrl: (args: { sessionToken: string }) => Promise<string>,
+  finalize: (args: { sessionToken: string; storageId: Id<'_storage'>; fileName: string; contentType: string; size: number }) => Promise<{ uploadId: Id<'uploads'>; url: string | null }>,
+): Promise<Id<'uploads'>> {
   const fileRes = await fetch(uri);
   const blob = await fileRes.blob();
   const size = blob.size;
 
-  const urlRes = await fetch(`${API_BASE}/uploads/image`, {
+  const postUrl = await generateUploadUrl({ sessionToken });
+  const putRes = await fetch(postUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ name: fileName, size, contentType: mimeType }),
-  });
-  if (!urlRes.ok) {
-    const err = await urlRes.json().catch(() => ({}));
-    throw new Error((err as any).error ?? `Upload request failed (${urlRes.status})`);
-  }
-  const { uploadURL, objectPath } = (await urlRes.json()) as {
-    uploadURL: string;
-    objectPath: string;
-  };
-
-  const putRes = await fetch(uploadURL, {
-    method: 'PUT',
     headers: { 'Content-Type': mimeType },
     body: blob,
   });
   if (!putRes.ok) throw new Error('Storage upload failed — please try again');
+  const { storageId } = (await putRes.json()) as { storageId: Id<'_storage'> };
 
-  return objectPath;
+  const { uploadId } = await finalize({ sessionToken, storageId, fileName, contentType: mimeType, size });
+  return uploadId;
 }
 
 const MEAL_SLOTS = ['Breakfast', 'Lunch', 'Dinner'] as const;
@@ -128,27 +121,16 @@ export default function CreateDropScreen() {
   const colors   = useColors();
   const insets   = useSafeAreaInsets();
   const router   = useRouter();
-  const { user, authHeaders } = useAuth();
+  const { user, token } = useAuth();
+  const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
+  const finalizeUpload = useMutation(api.uploads.finalize);
+  const createDropMutation = useMutation(api.drops.create);
+  const marketingAction = useAction(api.ai.marketing);
 
   // ── Chef identity ────────────────────────────────────────────────────────
-  const [chefId, setChefId]       = useState<string | null>(null);
-  const [loadingChef, setLoadingChef] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      if (!user) { setLoadingChef(false); return; }
-      try {
-        const res = await fetch(`${API_BASE}/chefs/me/status`, {
-          headers: authHeaders(), credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setChefId(data.chefId ?? null);
-        }
-      } catch { /* non-fatal */ }
-      finally { setLoadingChef(false); }
-    })();
-  }, [user, authHeaders]);
+  const status = useQuery(api.chefs.myStatus, token ? { sessionToken: token } : 'skip');
+  const chefId = status?.chefId ?? null;
+  const loadingChef = !!token && status === undefined;
 
   // ── Drop fields ──────────────────────────────────────────────────────────
   const [title, setTitle]           = useState('');
@@ -167,12 +149,12 @@ export default function CreateDropScreen() {
 
   // ── Photo upload ──────────────────────────────────────────────────────────
   const [photoUri, setPhotoUri]         = useState<string | null>(null);  // local preview
-  const [photoPath, setPhotoPath]       = useState<string | null>(null);  // objectPath from server
+  const [photoUploadId, setPhotoUploadId] = useState<Id<'uploads'> | null>(null);
   const [photoUploading, setPhotoUpload] = useState(false);
 
   const handlePickPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
+    const { status: permStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permStatus !== 'granted') {
       Alert.alert('Permission Required', 'Please allow photo library access to upload a food photo.');
       return;
     }
@@ -190,11 +172,11 @@ export default function CreateDropScreen() {
     const mimeType = asset.mimeType ?? 'image/jpeg';
 
     setPhotoUri(uri);
-    setPhotoPath(null);
+    setPhotoUploadId(null);
     setPhotoUpload(true);
     try {
-      const objectPath = await uploadImage(uri, fileName, mimeType, authHeaders());
-      setPhotoPath(objectPath);
+      const uploadId = await uploadImage(uri, fileName, mimeType, token!, generateUploadUrl, finalizeUpload);
+      setPhotoUploadId(uploadId);
     } catch (err: any) {
       Alert.alert('Upload failed', err.message ?? 'Could not upload photo — try again.');
       setPhotoUri(null);
@@ -215,24 +197,24 @@ export default function CreateDropScreen() {
       setAiError('Add some notes about your dish first');
       return;
     }
+    if (!token) { setAiError('Not signed in'); return; }
     setAiLoading(true);
     setAiError(null);
     try {
-      const res = await fetch(`${API_BASE}/ai/marketing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        credentials: 'include',
-        body: JSON.stringify({ rawDescription: aiNotes, tone: aiTone, dishName: title || aiNotes, isSecret: isSecretDrop }),
+      const result = await marketingAction({
+        sessionToken: token, rawDescription: aiNotes, tone: aiTone,
+        dishName: title || aiNotes, isSecret: isSecretDrop,
       });
-      const body = await res.json();
-      if (!res.ok) { setAiError(body.error ?? 'AI generation failed'); return; }
-      setAiResult(body);
-    } catch {
-      setAiError('Network error — try again');
+      setAiResult({
+        title: result.suggestedTitle, adCopy: result.adCopy,
+        caption: result.caption, hashtags: result.hashtags,
+      });
+    } catch (err: any) {
+      setAiError(err?.data?.message ?? err?.message ?? 'AI generation failed');
     } finally {
       setAiLoading(false);
     }
-  }, [aiNotes, aiTone, title, authHeaders]);
+  }, [aiNotes, aiTone, title, token, isSecretDrop, marketingAction]);
 
   const applyAiResult = () => {
     if (!aiResult) return;
@@ -250,7 +232,7 @@ export default function CreateDropScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    if (!chefId) { Alert.alert('Not a chef', 'Your chef profile is not linked.'); return; }
+    if (!chefId || !token) { Alert.alert('Not a chef', 'Your chef profile is not linked.'); return; }
 
     const priceNum    = parseFloat(price);
     const invNum      = parseInt(inventory, 10);
@@ -266,44 +248,34 @@ export default function CreateDropScreen() {
     if (!pickupLoc.trim()) { Alert.alert('Missing', 'Enter a pickup location.'); return; }
     if (isNaN(hoursNum) || hoursNum < 1)  { Alert.alert('Invalid', 'Drop must be open for at least 1 hour.'); return; }
 
-    const expiresAt = new Date(Date.now() + hoursNum * 3_600_000).toISOString();
+    const expiresAt = Date.now() + hoursNum * 3_600_000;
     const tagsArr   = tags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 5);
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/drops`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        credentials: 'include',
-        body: JSON.stringify({
-          chefId, title, description, mealSlot, price: priceNum,
-          inventory: invNum, minOrders: minNum,
-          pickupLocation: pickupLoc, expiresAt,
-          imageIndex, imageUrl: photoPath ?? null, tags: tagsArr,
-          isSecret: isSecretDrop,
-        }),
+      const drop = await createDropMutation({
+        sessionToken: token, chefId: chefId as Id<'chefs'>, title, description,
+        mealSlot, price: priceNum, inventory: invNum, minOrders: minNum,
+        pickupLocation: pickupLoc, expiresAt,
+        imageIndex, imageUploadId: photoUploadId ?? undefined, tags: tagsArr,
+        isSecret: isSecretDrop,
       });
-      const body = await res.json();
-      if (!res.ok) {
-        if (res.status === 403 && body.code === 'WALLET_FROZEN') {
-          // Wallet fell below the freeze threshold since this screen was opened.
-          // Send the chef back to Studio, which re-fetches wallet state on focus
-          // and shows the frozen banner with the Create Drop button disabled.
-          Alert.alert(
-            'Wallet Frozen',
-            body.error ?? 'Your wallet is frozen. Settle your cash fees before posting new drops.',
-            [{ text: 'Back to Studio', onPress: () => router.replace('/(tabs)/studio') }],
-          );
-          return;
-        }
-        Alert.alert('Error', body.error ?? 'Failed to create drop');
-        return;
-      }
-      Alert.alert('Drop live! 🔥', `"${body.title}" is now active. Plates: ${body.inventory}`, [
+      Alert.alert('Drop live! 🔥', `"${drop?.title}" is now active. Plates: ${drop?.inventory}`, [
         { text: 'Back to Studio', onPress: () => router.replace('/(tabs)/studio') },
       ]);
-    } catch {
-      Alert.alert('Network error', 'Check your connection and try again.');
+    } catch (err: any) {
+      if (err?.data?.code === 'WALLET_FROZEN') {
+        // Wallet fell below the freeze threshold since this screen was opened.
+        // Send the chef back to Studio, which re-fetches wallet state on focus
+        // and shows the frozen banner with the Create Drop button disabled.
+        Alert.alert(
+          'Wallet Frozen',
+          err.data.message ?? 'Your wallet is frozen. Settle your cash fees before posting new drops.',
+          [{ text: 'Back to Studio', onPress: () => router.replace('/(tabs)/studio') }],
+        );
+        return;
+      }
+      Alert.alert('Error', err?.data?.message ?? err?.message ?? 'Failed to create drop');
     } finally {
       setSubmitting(false);
     }
@@ -550,14 +522,14 @@ export default function CreateDropScreen() {
           >
             <GlassView intensity={25} style={[
               styles.photoPickerBtn,
-              photoPath ? { borderColor: 'rgba(74,222,128,0.4)' } : { borderColor: 'rgba(212,175,55,0.2)' },
+              photoUploadId ? { borderColor: 'rgba(74,222,128,0.4)' } : { borderColor: 'rgba(212,175,55,0.2)' },
             ]}>
               {photoUploading ? (
                 <>
                   <ActivityIndicator color="#D4AF37" size="small" />
                   <Text style={[styles.photoPickerText, { color: colors.mutedForeground }]}>Uploading…</Text>
                 </>
-              ) : photoPath ? (
+              ) : photoUploadId ? (
                 <>
                   <Ionicons name="checkmark-circle" size={20} color="#4ADE80" />
                   <Text style={[styles.photoPickerText, { color: '#4ADE80' }]}>Photo uploaded — tap to change</Text>
@@ -577,7 +549,7 @@ export default function CreateDropScreen() {
           {photoUri && (
             <View style={styles.photoPreviewWrap}>
               <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
-              {!photoPath && !photoUploading && (
+              {!photoUploadId && !photoUploading && (
                 <View style={styles.photoPreviewError}>
                   <Text style={styles.photoPreviewErrorText}>Upload failed — tap above to retry</Text>
                 </View>
@@ -586,7 +558,7 @@ export default function CreateDropScreen() {
           )}
 
           {/* Fallback image selector — shown when no photo is uploaded */}
-          {!photoPath && (
+          {!photoUploadId && (
             <View style={{ marginTop: 10 }}>
               <Text style={[styles.fieldHint, { color: colors.mutedForeground, marginBottom: 8 }]}>
                 Or pick a stock image (used when no photo is uploaded):
