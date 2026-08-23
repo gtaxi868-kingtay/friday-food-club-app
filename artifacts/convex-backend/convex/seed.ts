@@ -137,6 +137,38 @@ export const backfillDropLocations = mutation({
   },
 });
 
+/** Backfills a persistent Dish for each of the 5 launch drops, seeded
+ *  before the chef-menu feature existed. Idempotent. Run once:
+ *  npx convex run seed:backfillDishes */
+export const backfillDishes = mutation({
+  args: {},
+  handler: async (ctx) => {
+    let updated = 0;
+    const drops = await ctx.db.query("drops").collect();
+    for (const drop of drops) {
+      if (drop.dishId) continue;
+      const chefDishes = await ctx.db.query("dishes").withIndex("by_chefId", (q) => q.eq("chefId", drop.chefId)).collect();
+      let dish = chefDishes.find((d) => d.title.trim().toLowerCase() === drop.title.trim().toLowerCase());
+      const dishId = dish
+        ? dish._id
+        : await ctx.db.insert("dishes", {
+            chefId: drop.chefId,
+            title: drop.title,
+            description: drop.description,
+            mealSlot: drop.mealSlot,
+            imageIndex: drop.imageIndex,
+            tags: drop.tags,
+            timesDropped: 1,
+            loveCount: 0,
+            lastDroppedAt: drop._creationTime,
+          });
+      await ctx.db.patch(drop._id, { dishId });
+      updated++;
+    }
+    return { updated };
+  },
+});
+
 /** Separate from run() so it's never accidentally invoked against a
  *  production deployment — matches the NODE_ENV guard in the old
  *  lib/schema.ts. Call explicitly: npx convex run seed:runDemoAccounts */

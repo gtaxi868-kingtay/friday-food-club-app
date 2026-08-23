@@ -104,8 +104,43 @@ export const create = mutation({
     const location = await ctx.db.get(args.locationId);
     if (!location) throw new ConvexError({ code: "NOT_FOUND", message: "Selected pickup spot not found" });
 
+    // Find-or-create the persistent Dish this drop belongs to. "When it's
+    // gone, it's gone" only ever means this batch — the dish itself stays
+    // on the chef's menu (see dishes.list) so members can vote to see it
+    // dropped again, matched by (chef, title) so re-running the same dish
+    // accumulates history instead of forking a duplicate menu entry.
+    const now = Date.now();
+    const normalizedTitle = args.title.trim().toLowerCase();
+    const chefDishes = await ctx.db.query("dishes").withIndex("by_chefId", (q) => q.eq("chefId", args.chefId)).collect();
+    let dish = chefDishes.find((d) => d.title.trim().toLowerCase() === normalizedTitle);
+    let dishId;
+    if (dish) {
+      await ctx.db.patch(dish._id, {
+        description: args.description,
+        mealSlot: args.mealSlot,
+        imageIndex: args.imageIndex,
+        tags: args.tags,
+        timesDropped: dish.timesDropped + 1,
+        lastDroppedAt: now,
+      });
+      dishId = dish._id;
+    } else {
+      dishId = await ctx.db.insert("dishes", {
+        chefId: args.chefId,
+        title: args.title,
+        description: args.description,
+        mealSlot: args.mealSlot,
+        imageIndex: args.imageIndex,
+        tags: args.tags,
+        timesDropped: 1,
+        loveCount: 0,
+        lastDroppedAt: now,
+      });
+    }
+
     const dropId = await ctx.db.insert("drops", {
       chefId: args.chefId,
+      dishId,
       title: args.title,
       description: args.description,
       mealSlot: args.mealSlot,

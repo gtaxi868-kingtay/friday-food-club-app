@@ -13,6 +13,7 @@ import type * as ai from "../ai.js";
 import type * as auth from "../auth.js";
 import type * as chefs from "../chefs.js";
 import type * as config from "../config.js";
+import type * as dishes from "../dishes.js";
 import type * as drops from "../drops.js";
 import type * as favorites from "../favorites.js";
 import type * as fulfillment from "../fulfillment.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   chefs: typeof chefs;
   config: typeof config;
+  dishes: typeof dishes;
   drops: typeof drops;
   favorites: typeof favorites;
   fulfillment: typeof fulfillment;

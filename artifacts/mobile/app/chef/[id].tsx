@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Image,
@@ -24,11 +25,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useApp, type Chef } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -138,6 +140,113 @@ function DropHistoryCard({ drop, onPress }: { drop: DropSummary; onPress: () => 
         </View>
       </View>
     </Pressable>
+  );
+}
+
+// ── The Menu — a chef's permanent dish list. Drops close; the dish stays. ────
+// Loving/voting is gated: Club Pass members who've actually pre-ordered the
+// dish at least once can vote to see it come back (enforced server-side).
+
+interface DishSummary {
+  id: string;
+  title: string;
+  description: string;
+  mealSlot: string;
+  imageIndex: number;
+  tags: string[];
+  timesDropped: number;
+  loveCount: number;
+  lovedByMe: boolean;
+  canLove: boolean;
+}
+
+function DishCard({ dish, onToggleLove }: { dish: DishSummary; onToggleLove: (dish: DishSummary) => void }) {
+  const colors = useColors();
+  return (
+    <View style={[styles.dishCard, { borderColor: 'rgba(212,175,55,0.14)' }]}>
+      <Image
+        source={(DROP_IMAGES[dish.imageIndex] ?? DROP_IMAGES[1]) as any}
+        style={styles.dishImage}
+        resizeMode="cover"
+      />
+      <View style={styles.dishBody}>
+        <Text style={[styles.dishTitle, { color: colors.foreground }]} numberOfLines={1}>{dish.title}</Text>
+        <Text style={[styles.dishDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{dish.description}</Text>
+        <Text style={[styles.dishMeta, { color: colors.mutedForeground }]}>
+          {dish.mealSlot} · dropped {dish.timesDropped}× so far
+        </Text>
+      </View>
+      <Pressable
+        onPress={async () => { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onToggleLove(dish); }}
+        disabled={!dish.canLove}
+        style={styles.dishLoveBtn}
+      >
+        <Ionicons
+          name={dish.lovedByMe ? 'heart' : 'heart-outline'}
+          size={18}
+          color={dish.lovedByMe ? '#C41E3A' : dish.canLove ? colors.gold : colors.mutedForeground}
+        />
+        <Text style={[styles.dishLoveCount, { color: dish.lovedByMe ? '#C41E3A' : colors.mutedForeground }]}>
+          {dish.loveCount}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function MenuSection({ chefId, isRealId }: { chefId: string; isRealId: boolean }) {
+  const colors = useColors();
+  const { token } = useAuth();
+  const rawDishes = useQuery(
+    api.dishes.list,
+    isRealId ? { chefId: chefId as any, sessionToken: token ?? undefined } : 'skip',
+  );
+  const toggleLoveMutation = useMutation(api.dishes.toggleLove);
+  const loading = isRealId && rawDishes === undefined;
+  const dishes: DishSummary[] = (rawDishes ?? []).map((d) => ({
+    id: d._id, title: d.title, description: d.description, mealSlot: d.mealSlot,
+    imageIndex: d.imageIndex, tags: d.tags, timesDropped: d.timesDropped,
+    loveCount: d.loveCount, lovedByMe: d.lovedByMe, canLove: d.canLove,
+  }));
+
+  const handleToggleLove = async (dish: DishSummary) => {
+    if (!token) {
+      Alert.alert('Sign in required', 'Sign in as a Club Pass member to vote on dishes.');
+      return;
+    }
+    try {
+      await toggleLoveMutation({ sessionToken: token, dishId: dish.id as any });
+    } catch (err: any) {
+      const code = err?.data?.code;
+      const message = code === 'MEMBERS_ONLY'
+        ? 'Club Pass members can vote on dishes — subscribe to unlock this.'
+        : code === 'NOT_ORDERED'
+        ? 'Pre-order this dish at least once before voting for it.'
+        : err?.data?.message ?? 'Could not register your vote — try again.';
+      Alert.alert('Vote Not Counted', message);
+    }
+  };
+
+  if (!isRealId || loading || dishes.length === 0) return null;
+
+  return (
+    <>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.sectionDot, { backgroundColor: colors.gold }]} />
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>The Menu</Text>
+        <Text style={[styles.sectionCount, { color: colors.mutedForeground }]}>
+          {dishes.length} dish{dishes.length !== 1 ? 'es' : ''}
+        </Text>
+      </View>
+      <View style={styles.menuList}>
+        {dishes.map((dish) => (
+          <DishCard key={dish.id} dish={dish} onToggleLove={handleToggleLove} />
+        ))}
+      </View>
+      <Text style={styles.menuNote}>
+        Club Pass members who've pre-ordered a dish can vote ❤️ to bring it back.
+      </Text>
+    </>
   );
 }
 
@@ -368,6 +477,9 @@ export default function ChefProfileScreen() {
             </GlassView>
           </View>
 
+          {/* ── The Menu — persists after drops close ─────────────────────── */}
+          <MenuSection chefId={id ?? ''} isRealId={isRealId} />
+
           {/* ── Drop History ────────────────────────────────────────────── */}
           <DropsSection chefId={id ?? ''} isRealId={isRealId} />
 
@@ -457,6 +569,23 @@ const styles = StyleSheet.create({
   dropFooterText: { fontSize: 11, fontFamily: 'Inter_400Regular', flex: 1 },
   dropTapHint: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dropTapHintText: { fontSize: 11, fontFamily: 'Inter_600SemiBold' },
+
+  menuList: { paddingHorizontal: 16, gap: 10, marginBottom: 12 },
+  dishCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, borderWidth: 1, padding: 10, overflow: 'hidden',
+  },
+  dishImage: { width: 56, height: 56, borderRadius: 10, flexShrink: 0 },
+  dishBody: { flex: 1, gap: 2 },
+  dishTitle: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
+  dishDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 16 },
+  dishMeta: { fontSize: 11, fontFamily: 'Inter_400Regular', marginTop: 2 },
+  dishLoveBtn: { alignItems: 'center', gap: 2, paddingHorizontal: 6, flexShrink: 0 },
+  dishLoveCount: { fontSize: 11, fontFamily: 'Inter_600SemiBold' },
+  menuNote: {
+    fontSize: 11, fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.35)',
+    paddingHorizontal: 16, marginBottom: 24, fontStyle: 'italic',
+  },
 
   dropsLoader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 24 },
   dropsLoaderText: { fontSize: 13, fontFamily: 'Inter_400Regular' },

@@ -59,9 +59,38 @@ export default defineSchema({
     .index("by_chefId", ["chefId"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
+  // ── Dishes — a chef's permanent menu. A Drop is one time-boxed sale of
+  // a Dish; the Dish itself persists after the drop closes so "gone" only
+  // ever means this batch, not the recipe. ───────────────────────────────
+  dishes: defineTable({
+    chefId: v.id("chefs"),
+    title: v.string(),
+    description: v.string(),
+    mealSlot: v.string(),
+    imageIndex: v.number(),
+    tags: v.array(v.string()),
+    timesDropped: v.number(),
+    loveCount: v.number(),
+    lastDroppedAt: v.number(),
+  })
+    .index("by_chefId", ["chefId"])
+    .index("by_chefId_title", ["chefId", "title"]),
+
+  // ── Dish loves — a subscribed member's vote to see a dish come back.
+  // Gated: only Club Pass members who've actually pre-ordered the dish
+  // at least once may love it (see dishes.toggleLove). ──────────────────
+  dishLoves: defineTable({
+    dishId: v.id("dishes"),
+    userId: v.id("users"),
+  })
+    .index("by_dishId", ["dishId"])
+    .index("by_dishId_userId", ["dishId", "userId"])
+    .index("by_userId", ["userId"]),
+
   // ── Drops (replaces (:Chef)-[:POSTED]->(:Drop)) ─────────────────────
   drops: defineTable({
     chefId: v.id("chefs"),
+    dishId: v.optional(v.id("dishes")),
     title: v.string(),
     description: v.string(),
     mealSlot: v.string(),
