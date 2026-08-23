@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Plus, Trash2, Pin, UserMinus, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Plus, Trash2, Pin, UserMinus, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,9 +128,15 @@ function SpotCard({
               <MapPin className="w-3 h-3 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">{spot.region}</span>
               {spot.lat && spot.lng && (
-                <span className="text-xs text-muted-foreground/50 ml-1">
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary/80 hover:text-primary hover:underline ml-1 inline-flex items-center gap-1"
+                >
                   {Number(spot.lat).toFixed(4)}, {Number(spot.lng).toFixed(4)}
-                </span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
               )}
             </div>
           </div>
