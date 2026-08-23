@@ -160,36 +160,84 @@ interface DishSummary {
   canLove: boolean;
 }
 
-function DishCard({ dish, onToggleLove }: { dish: DishSummary; onToggleLove: (dish: DishSummary) => void }) {
+function DishCard({ dish, isTopVoted, onToggleLove }: { dish: DishSummary; isTopVoted: boolean; onToggleLove: (dish: DishSummary) => void }) {
   const colors = useColors();
+  const slotColor = MEAL_COLORS[dish.mealSlot] ?? colors.gold;
+
   return (
-    <View style={[styles.dishCard, { borderColor: 'rgba(212,175,55,0.14)' }]}>
-      <Image
-        source={(DROP_IMAGES[dish.imageIndex] ?? DROP_IMAGES[1]) as any}
-        style={styles.dishImage}
-        resizeMode="cover"
-      />
-      <View style={styles.dishBody}>
-        <Text style={[styles.dishTitle, { color: colors.foreground }]} numberOfLines={1}>{dish.title}</Text>
-        <Text style={[styles.dishDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{dish.description}</Text>
-        <Text style={[styles.dishMeta, { color: colors.mutedForeground }]}>
-          {dish.mealSlot} · dropped {dish.timesDropped}× so far
-        </Text>
-      </View>
-      <Pressable
-        onPress={async () => { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onToggleLove(dish); }}
-        disabled={!dish.canLove}
-        style={styles.dishLoveBtn}
-      >
-        <Ionicons
-          name={dish.lovedByMe ? 'heart' : 'heart-outline'}
-          size={18}
-          color={dish.lovedByMe ? '#C41E3A' : dish.canLove ? colors.gold : colors.mutedForeground}
+    <View style={styles.dishCard}>
+      <View style={styles.dishCardImage}>
+        <Image
+          source={(DROP_IMAGES[dish.imageIndex] ?? DROP_IMAGES[1]) as any}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
         />
-        <Text style={[styles.dishLoveCount, { color: dish.lovedByMe ? '#C41E3A' : colors.mutedForeground }]}>
-          {dish.loveCount}
+        <LinearGradient
+          colors={['rgba(10,10,10,0.05)', 'rgba(10,10,10,0.9)']}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.dishMealBadge, { backgroundColor: slotColor }]}>
+          <Text style={styles.dishMealText}>{dish.mealSlot.toUpperCase()}</Text>
+        </View>
+        {isTopVoted && dish.loveCount > 0 && (
+          <LinearGradient
+            colors={['#F5D060', '#D4AF37', '#9E8028']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={styles.dishLegendBadge}
+          >
+            <MaterialCommunityIcons name="crown" size={10} color="#0A0A0A" />
+            <Text style={styles.dishLegendText}>MOST WANTED BACK</Text>
+          </LinearGradient>
+        )}
+        <View style={styles.dishTitleWrap}>
+          <Text style={styles.dishCardTitle} numberOfLines={2}>{dish.title}</Text>
+          <Text style={styles.dishCardSub} numberOfLines={1}>
+            {dish.timesDropped === 1 ? 'Dropped once so far' : `Dropped ${dish.timesDropped}× so far`}
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.dishCardBody, { backgroundColor: colors.card, borderColor: 'rgba(212,175,55,0.12)' }]}>
+        <Text style={[styles.dishCardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>
+          {dish.description}
         </Text>
-      </Pressable>
+
+        <Pressable
+          onPress={async () => { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onToggleLove(dish); }}
+          disabled={!dish.canLove}
+          style={({ pressed }) => [
+            styles.voteBtn,
+            dish.lovedByMe
+              ? { backgroundColor: 'rgba(196,30,58,0.15)', borderColor: 'rgba(196,30,58,0.4)' }
+              : dish.canLove
+              ? { backgroundColor: 'rgba(212,175,55,0.1)', borderColor: 'rgba(212,175,55,0.35)' }
+              : { backgroundColor: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.08)' },
+            { opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons
+            name={dish.lovedByMe ? 'heart' : dish.canLove ? 'heart-outline' : 'lock-closed-outline'}
+            size={14}
+            color={dish.lovedByMe ? '#C41E3A' : dish.canLove ? colors.gold : colors.mutedForeground}
+          />
+          <Text
+            style={[
+              styles.voteBtnText,
+              { color: dish.lovedByMe ? '#C41E3A' : dish.canLove ? colors.gold : colors.mutedForeground },
+            ]}
+          >
+            {dish.canLove
+              ? dish.lovedByMe
+                ? `Voted · ${dish.loveCount} want it back`
+                : dish.loveCount > 0
+                ? `Vote it back · ${dish.loveCount} already have`
+                : 'Be the first to vote it back'
+              : dish.loveCount > 0
+              ? `${dish.loveCount} members want this back`
+              : 'Order once to unlock voting'}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -229,23 +277,30 @@ function MenuSection({ chefId, isRealId }: { chefId: string; isRealId: boolean }
 
   if (!isRealId || loading || dishes.length === 0) return null;
 
+  const topLoveCount = Math.max(...dishes.map((d) => d.loveCount));
+
   return (
     <>
       <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: colors.gold }]} />
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>The Menu</Text>
+        <MaterialCommunityIcons name="treasure-chest" size={14} color={colors.gold} style={{ marginRight: 2 }} />
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>The Vault</Text>
         <Text style={[styles.sectionCount, { color: colors.mutedForeground }]}>
-          {dishes.length} dish{dishes.length !== 1 ? 'es' : ''}
+          {dishes.length} secret drop{dishes.length !== 1 ? 's' : ''}
         </Text>
       </View>
-      <View style={styles.menuList}>
-        {dishes.map((dish) => (
-          <DishCard key={dish.id} dish={dish} onToggleLove={handleToggleLove} />
-        ))}
-      </View>
-      <Text style={styles.menuNote}>
-        Club Pass members who've pre-ordered a dish can vote ❤️ to bring it back.
+      <Text style={styles.vaultSub}>
+        Every drop this chef has ever run. Order one, then vote to see it dropped again.
       </Text>
+      <FlatList
+        data={dishes}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(d) => d.id}
+        contentContainerStyle={styles.carousel}
+        renderItem={({ item }) => (
+          <DishCard dish={item} isTopVoted={item.loveCount === topLoveCount && item.loveCount > 0} onToggleLove={handleToggleLove} />
+        )}
+      />
     </>
   );
 }
@@ -570,22 +625,37 @@ const styles = StyleSheet.create({
   dropTapHint: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dropTapHintText: { fontSize: 11, fontFamily: 'Inter_600SemiBold' },
 
-  menuList: { paddingHorizontal: 16, gap: 10, marginBottom: 12 },
-  dishCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 14, borderWidth: 1, padding: 10, overflow: 'hidden',
+  vaultSub: {
+    fontSize: 12, fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.4)',
+    paddingHorizontal: 16, marginBottom: 14, lineHeight: 17,
   },
-  dishImage: { width: 56, height: 56, borderRadius: 10, flexShrink: 0 },
-  dishBody: { flex: 1, gap: 2 },
-  dishTitle: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
-  dishDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 16 },
-  dishMeta: { fontSize: 11, fontFamily: 'Inter_400Regular', marginTop: 2 },
-  dishLoveBtn: { alignItems: 'center', gap: 2, paddingHorizontal: 6, flexShrink: 0 },
-  dishLoveCount: { fontSize: 11, fontFamily: 'Inter_600SemiBold' },
-  menuNote: {
-    fontSize: 11, fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.35)',
-    paddingHorizontal: 16, marginBottom: 24, fontStyle: 'italic',
+  dishCard: { width: CARD_W, borderRadius: 18, overflow: 'hidden' },
+  dishCardImage: { height: 160, position: 'relative', overflow: 'hidden' },
+  dishMealBadge: {
+    position: 'absolute', top: 10, left: 10,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12,
   },
+  dishMealText: { fontSize: 9, fontFamily: 'Inter_700Bold', color: '#0A0A0A', letterSpacing: 1.5 },
+  dishLegendBadge: {
+    position: 'absolute', top: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+  },
+  dishLegendText: { fontSize: 8, fontFamily: 'Inter_700Bold', color: '#0A0A0A', letterSpacing: 0.8 },
+  dishTitleWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
+  dishCardTitle: { fontSize: 15, fontFamily: 'PlayfairDisplay_700Bold', color: '#FFFFFF' },
+  dishCardSub: { fontSize: 10, fontFamily: 'Inter_500Medium', color: 'rgba(212,175,55,0.8)', marginTop: 3 },
+  dishCardBody: {
+    padding: 14, gap: 12,
+    borderWidth: 1, borderTopWidth: 0,
+    borderBottomLeftRadius: 18, borderBottomRightRadius: 18,
+  },
+  dishCardDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 17 },
+  voteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 12, borderWidth: 1,
+  },
+  voteBtnText: { fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.2, textAlign: 'center' },
 
   dropsLoader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 24 },
   dropsLoaderText: { fontSize: 13, fontFamily: 'Inter_400Regular' },
