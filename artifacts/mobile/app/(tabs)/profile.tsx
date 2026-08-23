@@ -26,12 +26,13 @@ const TIER_COLORS: { [key: string]: string[] } = {
 };
 
 const MENU_ITEMS = [
-  { icon: 'notifications-outline', label: 'Drop Alerts', value: 'On' },
-  { icon: 'location-outline', label: 'My Region', value: 'Port of Spain' },
-  { icon: 'share-social-outline', label: 'Share Profile', value: null },
-  { icon: 'shield-checkmark-outline', label: 'Privacy & Security', value: null },
-  { icon: 'help-circle-outline', label: 'Help & Support', value: null },
-  { icon: 'document-text-outline', label: 'Terms & Club Rules', value: null },
+  { icon: 'notifications-outline', label: 'Drop Alerts', value: 'On', route: null },
+  { icon: 'location-outline', label: 'My Region', value: 'Port of Spain', route: null },
+  { icon: 'map-outline', label: 'Pickup Spots', value: null, route: '/spots' },
+  { icon: 'share-social-outline', label: 'Share Profile', value: null, route: null },
+  { icon: 'shield-checkmark-outline', label: 'Privacy & Security', value: null, route: null },
+  { icon: 'help-circle-outline', label: 'Help & Support', value: null, route: null },
+  { icon: 'document-text-outline', label: 'Terms & Club Rules', value: null, route: null },
 ] as const;
 
 export default function ProfileScreen() {
@@ -284,7 +285,10 @@ export default function ProfileScreen() {
               {i > 0 && (
                 <View style={[styles.menuDivider, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
               )}
-              <Pressable style={({ pressed }) => [styles.menuRow, { opacity: pressed ? 0.7 : 1 }]}>
+              <Pressable
+                style={({ pressed }) => [styles.menuRow, { opacity: pressed ? 0.7 : 1 }]}
+                onPress={() => { if (item.route) router.push(item.route as any); }}
+              >
                 <GlassView intensity={25} style={styles.menuIconWrap}>
                   <Ionicons name={item.icon as any} size={17} color={colors.gold} />
                 </GlassView>

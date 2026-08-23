@@ -95,6 +95,10 @@ function RootLayoutNav() {
         name="chef/[id]"
         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
       />
+      <Stack.Screen
+        name="spots"
+        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
+      />
     </Stack>
   );
 }
