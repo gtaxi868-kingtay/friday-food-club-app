@@ -42,6 +42,7 @@ const MEAL_SLOT_COLORS: Record<string, string> = {
   Breakfast: '#F5A623',
   Lunch: '#7ED321',
   Dinner: '#D4AF37',
+  Dessert: '#E85D9C',
 };
 
 function useCountdown(expiresAt: string) {

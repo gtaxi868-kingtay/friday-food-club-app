@@ -37,7 +37,7 @@ export interface Drop {
   remaining: number;
   expiresAt: string;
   cuisine: string;
-  mealSlot: 'Breakfast' | 'Lunch' | 'Dinner';
+  mealSlot: 'Breakfast' | 'Lunch' | 'Dinner' | 'Dessert';
   imageIndex: number;
   imageUrl?: string | null;
   tags: string[];

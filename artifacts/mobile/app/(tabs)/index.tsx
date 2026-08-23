@@ -22,7 +22,7 @@ import DropCard from '@/components/DropCard';
 const LOGO_GOLD = require('@/assets/images/logo-gold-transparent.png');
 const LOGO_WHITE = require('@/assets/images/logo-white-transparent.png');
 
-const FILTERS = ['All Drops', 'Secret', 'Ending Soon', 'Near Full', 'Breakfast', 'Lunch', 'Dinner'] as const;
+const FILTERS = ['All Drops', 'Secret', 'Ending Soon', 'Near Full', 'Breakfast', 'Lunch', 'Dinner', 'Dessert'] as const;
 type Filter = (typeof FILTERS)[number];
 
 function filterDrops(drops: Drop[], filter: Filter): Drop[] {
@@ -41,6 +41,8 @@ function filterDrops(drops: Drop[], filter: Filter): Drop[] {
       return drops.filter(d => d.mealSlot === 'Lunch');
     case 'Dinner':
       return drops.filter(d => d.mealSlot === 'Dinner');
+    case 'Dessert':
+      return drops.filter(d => d.mealSlot === 'Dessert');
     default:
       return drops;
   }

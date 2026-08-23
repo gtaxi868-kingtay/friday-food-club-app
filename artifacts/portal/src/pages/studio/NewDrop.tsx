@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 
 const dropSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
-  mealSlot: z.enum(["Breakfast", "Lunch", "Dinner"]),
+  mealSlot: z.enum(["Breakfast", "Lunch", "Dinner", "Dessert"]),
   description: z.string().min(10, "Description is too short"),
   locationId: z.string().min(1, "Pickup spot is required"),
   price: z.coerce.number().min(1, "Price must be greater than 0"),
@@ -179,6 +179,7 @@ export default function NewDrop() {
                               <SelectItem value="Breakfast">Breakfast</SelectItem>
                               <SelectItem value="Lunch">Lunch</SelectItem>
                               <SelectItem value="Dinner">Dinner</SelectItem>
+                              <SelectItem value="Dessert">Dessert</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />

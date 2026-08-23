@@ -63,6 +63,7 @@ const MEAL_COLORS: Record<string, string> = {
   Breakfast: '#F5A623',
   Lunch:     '#7ED321',
   Dinner:    '#D4AF37',
+  Dessert:   '#E85D9C',
 };
 
 const STATUS_META: Record<string, { label: string; color: string; icon: string }> = {

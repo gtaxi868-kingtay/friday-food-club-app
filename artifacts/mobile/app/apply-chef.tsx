@@ -47,7 +47,7 @@ const CUISINE_OPTIONS = [
   'Trinidadian Fusion', 'Indo-Trini', 'Caribbean Fine Dining',
   'Street Food', 'BBQ & Smoke', 'Seafood', 'Bake & Shark',
   'Vegetarian / Vegan', 'Doubles & Roti', 'Chinese-Trini', 'Creole',
-  'Home Cooking',
+  'Home Cooking', 'Bakery & Pastries', 'Confectionery & Sweets',
 ];
 
 type UploadState = { uri: string | null; uploadId: Id<'uploads'> | null; uploading: boolean };

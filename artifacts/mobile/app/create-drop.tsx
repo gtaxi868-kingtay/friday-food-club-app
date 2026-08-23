@@ -57,7 +57,7 @@ async function uploadImage(
   return uploadId;
 }
 
-const MEAL_SLOTS = ['Breakfast', 'Lunch', 'Dinner'] as const;
+const MEAL_SLOTS = ['Breakfast', 'Lunch', 'Dinner', 'Dessert'] as const;
 type MealSlot = (typeof MEAL_SLOTS)[number];
 
 const AI_TONES = [

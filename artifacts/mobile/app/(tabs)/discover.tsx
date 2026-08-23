@@ -28,6 +28,8 @@ const CUISINES = [
   { label: 'BBQ & Smoke', icon: 'flame-outline' },
   { label: 'Fusion', icon: 'sparkles-outline' },
   { label: 'Street Food', icon: 'storefront-outline' },
+  { label: 'Bakery & Pastries', icon: 'cafe-outline' },
+  { label: 'Confectionery & Sweets', icon: 'ice-cream-outline' },
 ] as const;
 
 export default function DiscoverScreen() {
