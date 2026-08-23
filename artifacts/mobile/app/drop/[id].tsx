@@ -69,6 +69,10 @@ function viewerCount(id: string): number {
   return 8 + (seed % 23);
 }
 
+// Public landing page — what a recipient lands on before the app is
+// installed. Update this URL if the artifact is ever republished/moved.
+const LANDING_URL = 'https://claude.ai/code/artifact/0943a17b-6669-40f1-a700-3c972b9aeaf7';
+
 function buildWhatsAppText(drop: Drop, secs: number): string {
   const urgency = secs < 3600 ? `Only ${fmt(secs)} LEFT` : `Closing in ${fmt(secs)}`;
   const spotsLeft = drop.remaining ?? Math.max(0, (drop.inventory || drop.minOrders) - drop.currentOrders);
@@ -79,7 +83,8 @@ function buildWhatsAppText(drop: Drop, secs: number): string {
     `⏰ ${urgency}\n` +
     `🔥 Only ${spotsLeft > 0 ? spotsLeft : 'a few'} plates left — hard limit, no restocks\n\n` +
     `Don't sleep — this is members only. Pre-order now before it's gone.\n\n` +
-    `*Good Food. Good People. Exclusive Access.* 🥇`
+    `*Good Food. Good People. Exclusive Access.* 🥇\n` +
+    `${LANDING_URL}`
   );
 }
 
