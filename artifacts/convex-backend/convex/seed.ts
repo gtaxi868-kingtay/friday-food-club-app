@@ -25,6 +25,17 @@ const DROP_SEEDS = [
   { key: "drop5", chefKey: "chef5", title: "Doubles & Doubles Only", description: "The best doubles in the city — bara fried to order, pepper sauce made fresh each morning.", mealSlot: "Breakfast", price: 15, inventory: 50, minOrders: 25, pickupLocation: "Arima, Market Drive", imageIndex: 2, tags: ["Community Fave", "Vegan"], expiresHoursFromNow: 8 },
 ];
 
+// Real approximate coordinates for each seeded drop's pickup text — used to
+// backfill the Spot + lat/lng that didn't exist when these drops were first
+// seeded (before the pickup-location map feature was added).
+const SPOT_SEEDS = [
+  { forDropTitle: "Braised Oxtail Perfection", name: "Queen's Park Savannah", address: "Queen's Park Savannah, Port of Spain", region: "Port of Spain", lat: 10.6870, lng: -61.5077 },
+  { forDropTitle: "Crab Back Roti Special", name: "High Street", address: "High Street, San Fernando", region: "San Fernando", lat: 10.2820, lng: -61.4680 },
+  { forDropTitle: "Coconut Pelau x Stew Chicken", name: "Market Square", address: "Market Square, Chaguanas", region: "Chaguanas", lat: 10.5178, lng: -61.4110 },
+  { forDropTitle: "Butter Lobster Pasta Fusion", name: "Library Junction", address: "Library Junction, Diego Martin", region: "Diego Martin", lat: 10.7237, lng: -61.5605 },
+  { forDropTitle: "Doubles & Doubles Only", name: "Market Drive", address: "Market Drive, Arima", region: "Arima", lat: 10.6382, lng: -61.2827 },
+];
+
 export const run = mutation({
   args: {},
   handler: async (ctx) => {
@@ -92,6 +103,37 @@ export const run = mutation({
 
     // demo accounts (dev only — call seed:runDemoAccounts explicitly, never in prod)
     return { chefs: Object.keys(chefIdByKey).length, ok: true };
+  },
+});
+
+/** Backfills a registered Spot + coordinates onto the 5 launch drops seeded
+ *  before the pickup-location map feature existed. Idempotent — safe to
+ *  re-run. Run once: npx convex run seed:backfillDropLocations */
+export const backfillDropLocations = mutation({
+  args: {},
+  handler: async (ctx) => {
+    let updated = 0;
+    for (const s of SPOT_SEEDS) {
+      const drop = (await ctx.db.query("drops").collect()).find((d) => d.title === s.forDropTitle);
+      if (!drop || drop.locationId) continue;
+
+      const existingLocations = await ctx.db.query("locations").collect();
+      let location = existingLocations.find((l) => l.name === s.name && l.region === s.region);
+      const locationId = location
+        ? location._id
+        : await ctx.db.insert("locations", {
+            name: s.name,
+            address: s.address,
+            region: s.region,
+            lat: s.lat,
+            lng: s.lng,
+            isPinnable: false,
+          });
+
+      await ctx.db.patch(drop._id, { locationId, pickupLat: s.lat, pickupLng: s.lng });
+      updated++;
+    }
+    return { updated };
   },
 });
 
