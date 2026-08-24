@@ -17,7 +17,9 @@ import ScanToken from '@/pages/studio/ScanToken';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import ChefVerification from '@/pages/admin/ChefVerification';
 import CurationPanel from '@/pages/admin/CurationPanel';
-import SpotsPanel from '@/pages/admin/SpotsPanel';;
+import SpotsPanel from '@/pages/admin/SpotsPanel';
+import WaitlistPanel from '@/pages/admin/WaitlistPanel';
+import JoinWaitlist from '@/pages/public/JoinWaitlist';
 
 const queryClient = new QueryClient();
 
@@ -63,6 +65,7 @@ function Router() {
       
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/waitlist" component={JoinWaitlist} />
 
       {/* CHEF Routes */}
       <Route path="/studio">
@@ -87,6 +90,9 @@ function Router() {
       </Route>
       <Route path="/admin/spots">
         <ProtectedRoute component={SpotsPanel} allowedRoles={['ADMIN']} />
+      </Route>
+      <Route path="/admin/waitlist">
+        <ProtectedRoute component={WaitlistPanel} allowedRoles={['ADMIN']} />
       </Route>
 
       <Route component={NotFound} />

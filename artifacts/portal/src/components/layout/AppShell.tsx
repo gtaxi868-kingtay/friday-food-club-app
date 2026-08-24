@@ -1,6 +1,6 @@
 import { useSession } from "@/components/SessionProvider";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, LogOut, Camera, ShieldCheck, Sparkles, MapPin } from "lucide-react";
+import { LayoutDashboard, LogOut, Camera, ShieldCheck, Sparkles, MapPin, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logoUrl from "@/assets/logo-white.png";
 
@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
   { title: "Chef Verification",href: "/admin/chefs",     icon: ShieldCheck,     role: "ADMIN" },
   { title: "Curation",         href: "/admin/curation",  icon: Sparkles,        role: "ADMIN" },
   { title: "Spots",            href: "/admin/spots",     icon: MapPin,          role: "ADMIN" },
+  { title: "Waitlist",         href: "/admin/waitlist",  icon: ClipboardList,   role: "ADMIN" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

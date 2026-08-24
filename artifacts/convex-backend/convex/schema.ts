@@ -213,6 +213,17 @@ export default defineSchema({
     contentType: v.string(),
   }).index("by_userId", ["userId"]).index("by_storageId", ["storageId"]),
 
+  // ── Pre-launch waitlist — buyers or chefs who want to be notified when
+  // there's real demand, before the app is publicly live. ────────────────
+  waitlist: defineTable({
+    name: v.string(),
+    contact: v.string(), // phone or email, whatever they gave
+    role: v.union(v.literal("BUYER"), v.literal("CHEF")),
+    area: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  })
+    .index("by_role", ["role"]),
+
   // ── Platform config — single row, replaces (:Config {id:'platform'}) ─
   config: defineTable({
     key: v.literal("platform"),

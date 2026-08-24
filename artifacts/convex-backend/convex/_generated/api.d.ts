@@ -25,6 +25,7 @@ import type * as orders from "../orders.js";
 import type * as seed from "../seed.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as uploads from "../uploads.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   subscriptions: typeof subscriptions;
   uploads: typeof uploads;
+  waitlist: typeof waitlist;
 }>;
 
 /**
