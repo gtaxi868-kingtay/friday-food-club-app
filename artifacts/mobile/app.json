@@ -45,6 +45,12 @@
           "color": "#D4AF37",
           "defaultChannel": "default"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Friday Food Club uses your location to show you the closest drops first."
+        }
       ]
     ],
     "experiments": {

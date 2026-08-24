@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '@workspace/convex-backend/convex/_generated/api';
 import type { Id } from '@workspace/convex-backend/convex/_generated/dataModel';
@@ -47,6 +48,10 @@ export interface Drop {
   pickupLat?: number | null;
   pickupLng?: number | null;
   isSecret?: boolean;
+  /** km from the user's current location, when it's known — null when
+   *  either side is missing coordinates. Feed order already reflects this
+   *  server-side; it's surfaced here purely for display ("0.8 km away"). */
+  distanceKm?: number | null;
 }
 
 export interface Order {
@@ -124,6 +129,7 @@ function mapDrop(d: any): Drop {
     pickupLocation: d.pickupLocation,
     pickupLat: d.pickupLat ?? null,
     pickupLng: d.pickupLng ?? null,
+    distanceKm: d.distanceKm ?? null,
     expiresAt: new Date(d.expiresAt).toISOString(),
     cuisine: 'Caribbean',
     mealSlot: d.mealSlot,
@@ -171,6 +177,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const { token: sessionToken } = useAuth();
   const [guestToken, setGuestToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Closest-first feed — best-effort: a denied/unavailable permission just
+  // leaves userLocation null, and the feed falls back to its recency sort
+  // (see drops.list), so this never blocks or breaks anything on failure.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch {
+        // Permission dialog dismissed, location services off, simulator with
+        // no location set, etc. — feed just stays in recency order.
+      }
+    })();
+  }, []);
 
   // Guest identity — only needed while logged out.
   useEffect(() => {
@@ -188,7 +212,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [sessionToken, convex]);
 
   // ── Reactive live data — no manual fetch/refresh plumbing needed ──────────
-  const dropsRaw = useQuery(api.drops.list, {});
+  const dropsRaw = useQuery(
+    api.drops.list,
+    userLocation ? { lat: userLocation.lat, lng: userLocation.lng } : {},
+  );
   const chefsRaw = useQuery(api.chefs.list, {});
   const ordersRaw = useQuery(
     api.orders.listMine,

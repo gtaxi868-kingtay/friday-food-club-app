@@ -12,16 +12,34 @@ function isFridayInTrinidad(): boolean {
   return day === "Friday";
 }
 
+/** Great-circle distance in km between two lat/lng points (haversine). */
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 /** Reactive drop feed. Secret drops are filtered server-side unless it's
  *  currently Friday in Trinidad — this is the enforcement point that used
  *  to live in the orders POST route; here it also hides them from the feed
- *  itself, which the old REST API didn't do. */
+ *  itself, which the old REST API didn't do.
+ *
+ *  When the caller supplies their lat/lng, drops are ranked by distance
+ *  from the user instead of recency — drops without pickup coordinates
+ *  (older seed data, pre-map-feature) sort after every drop that has them,
+ *  in their original recency order, rather than being treated as "closest". */
 export const list = query({
   args: {
     status: v.optional(v.string()),
     mealSlot: v.optional(v.string()),
+    lat: v.optional(v.number()),
+    lng: v.optional(v.number()),
   },
-  handler: async (ctx, { status, mealSlot }) => {
+  handler: async (ctx, { status, mealSlot, lat, lng }) => {
     let drops = status
       ? await ctx.db.query("drops").withIndex("by_status", (q) => q.eq("status", status as any)).collect()
       : await ctx.db.query("drops").collect();
@@ -34,16 +52,32 @@ export const list = query({
     const withChef = await Promise.all(
       drops.map(async (d) => {
         const chef = await ctx.db.get(d.chefId);
+        const distanceKm_ =
+          lat !== undefined && lng !== undefined && d.pickupLat !== undefined && d.pickupLng !== undefined
+            ? distanceKm(lat, lng, d.pickupLat, d.pickupLng)
+            : null;
         return {
           ...d,
           chefName: chef?.name ?? null,
           chefHandle: chef?.handle ?? null,
           remaining: Math.max(0, d.inventory - d.currentOrders),
+          distanceKm: distanceKm_,
         };
       }),
     );
 
-    return withChef.sort((a, b) => b._creationTime - a._creationTime);
+    const byRecency = (a: typeof withChef[number], b: typeof withChef[number]) => b._creationTime - a._creationTime;
+
+    if (lat === undefined || lng === undefined) {
+      return withChef.sort(byRecency);
+    }
+
+    return withChef.sort((a, b) => {
+      if (a.distanceKm === null && b.distanceKm === null) return byRecency(a, b);
+      if (a.distanceKm === null) return 1;
+      if (b.distanceKm === null) return -1;
+      return a.distanceKm - b.distanceKm;
+    });
   },
 });
 
