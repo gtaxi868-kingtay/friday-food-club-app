@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { useQuery, useMutation, useConvex } from 'convex/react';
+import { useQuery, useMutation, useAction, useConvex } from 'convex/react';
 import { api } from '@workspace/convex-backend/convex/_generated/api';
 import type { Id } from '@workspace/convex-backend/convex/_generated/dataModel';
 import { useAuth } from './AuthContext';
+import { reportRuntimeError } from '@/lib/runtimeDiagnostics';
 
 // ─── Guest identity ─────────────────────────────────────────────────────────
 // Anonymous checkout needs a server-signed guest token (Convex mutations have
@@ -48,6 +49,9 @@ export interface Drop {
   pickupLat?: number | null;
   pickupLng?: number | null;
   isSecret?: boolean;
+  /** Chef-boosted or admin-curated placement. Feed order already reflects
+   *  this server-side; surfaced here purely so the card can show a badge. */
+  isFeatured?: boolean;
   /** km from the user's current location, when it's known — null when
    *  either side is missing coordinates. Feed order already reflects this
    *  server-side; it's surfaced here purely for display ("0.8 km away"). */
@@ -67,7 +71,7 @@ export interface Order {
   currentOrders: number;
   expiresAt: string;
   pickupToken?: string;
-  escrowStatus?: 'HELD' | 'RELEASED' | 'CASH' | 'CASH_RECONCILED';
+  escrowStatus?: 'PENDING_PAYMENT' | 'HELD' | 'RELEASED' | 'CASH' | 'CASH_RECONCILED' | 'PAYMENT_FAILED';
   paymentMethod?: 'DIGITAL' | 'CASH';
   pickupLocation?: string | null;
   pickupLat?: number | null;
@@ -94,7 +98,9 @@ interface AppContextValue {
   orderedDropIds: Set<string>;
   isLoadingDrops: boolean;
   dropsError: string | null;
-  preOrder: (drop: Drop, paymentMethod?: 'DIGITAL' | 'CASH') => Promise<void>;
+  startupError: string | null;
+  retryStartup: () => void;
+  preOrder: (drop: Drop, paymentMethod?: 'DIGITAL' | 'CASH') => Promise<{ checkoutUrl?: string }>;
   cancelOrder: (orderId: string) => Promise<void>;
   getDropById: (id: string) => Drop | undefined;
   refreshDrops: () => Promise<void>;
@@ -138,6 +144,7 @@ function mapDrop(d: any): Drop {
     tags: d.tags ?? [],
     status: d.status,
     isSecret: d.isSecret ?? false,
+    isFeatured: d.isFeatured ?? false,
   };
 }
 
@@ -176,6 +183,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const convex = useConvex();
   const { token: sessionToken } = useAuth();
   const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [guestTokenError, setGuestTokenError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -196,20 +204,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // Guest identity — only needed while logged out.
-  useEffect(() => {
-    (async () => {
-      if (sessionToken) return;
+  const issueGuestIdentity = useCallback(async () => {
+    try {
+      if (sessionToken) {
+        setGuestTokenError(null);
+        return;
+      }
       const stored = await AsyncStorage.getItem(GUEST_TOKEN_KEY);
       if (stored) {
         setGuestToken(stored);
-        return;
+      } else {
+        const { guestToken: issued } = await convex.mutation(api.orders.issueGuestToken, {});
+        if (!issued) throw new Error('Guest identity response did not include a token');
+        await AsyncStorage.setItem(GUEST_TOKEN_KEY, issued);
+        setGuestToken(issued);
       }
-      const { guestToken: issued } = await convex.mutation(api.orders.issueGuestToken, {});
-      await AsyncStorage.setItem(GUEST_TOKEN_KEY, issued);
-      setGuestToken(issued);
-    })();
-  }, [sessionToken, convex]);
+      setGuestTokenError(null);
+    } catch (error) {
+      reportRuntimeError('guest-identity', error);
+      setGuestTokenError(
+        'Guest setup is temporarily unavailable. You can keep browsing, but sign in to place a digital order.',
+      );
+    }
+  }, [convex, sessionToken]);
+
+  // Guest identity — only needed while logged out.
+  useEffect(() => {
+    void issueGuestIdentity();
+  }, [issueGuestIdentity]);
+
+  const retryStartup = useCallback(() => {
+    setGuestTokenError(null);
+    void issueGuestIdentity();
+  }, [issueGuestIdentity]);
 
   // ── Reactive live data — no manual fetch/refresh plumbing needed ──────────
   const dropsRaw = useQuery(
@@ -227,32 +254,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const orders = (ordersRaw ?? []).map(mapOrder);
   const orderedDropIds = new Set(orders.filter((o) => o.status !== 'cancelled').map((o) => o.dropId));
   const isLoadingDrops = dropsRaw === undefined;
-  const dropsError = null;
+  const dropsError = guestTokenError;
 
   const placeOrderMutation = useMutation(api.orders.place);
+  const startOrderCheckout = useAction(api.payments.startOrderCheckout);
   const cancelOrderMutation = useMutation(api.orders.cancel);
 
   const preOrder = useCallback(async (drop: Drop, paymentMethod: 'DIGITAL' | 'CASH' = 'DIGITAL') => {
-    if (drop.soldOut || drop.status === 'SOLD_OUT' || (drop.inventory > 0 && drop.remaining <= 0)) {
-      throw new Error('This drop is SOLD OUT');
+    try {
+      if (drop.soldOut || drop.status === 'SOLD_OUT' || (drop.inventory > 0 && drop.remaining <= 0)) {
+        throw new Error('This drop is SOLD OUT');
+      }
+      if (paymentMethod === 'DIGITAL' && !sessionToken) {
+        throw new Error('DIGITAL_REQUIRES_ACCOUNT');
+      }
+      const placed = await placeOrderMutation({
+        dropId: drop.id as Id<'drops'>,
+        paymentMethod,
+        sessionToken: sessionToken ?? undefined,
+        guestToken: guestToken ?? undefined,
+        idempotencyKey: `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      });
+      if (paymentMethod === 'DIGITAL') {
+        const orderId = (placed as any)?.order?._id;
+        if (!orderId || !sessionToken) throw new Error('Payment order could not be created');
+        return startOrderCheckout({ orderId, sessionToken });
+      }
+      return {};
+    } catch (error) {
+      reportRuntimeError('order-action', error, { paymentMethod });
+      throw error;
     }
-    await placeOrderMutation({
-      dropId: drop.id as Id<'drops'>,
-      paymentMethod,
-      sessionToken: sessionToken ?? undefined,
-      guestToken: guestToken ?? undefined,
-    });
     // No optimistic local state needed — Convex's reactive queries above
     // (ordersRaw / dropsRaw) update every subscribed screen automatically
     // the instant the mutation commits.
-  }, [placeOrderMutation, sessionToken, guestToken]);
+  }, [placeOrderMutation, startOrderCheckout, sessionToken, guestToken]);
 
   const cancelOrder = useCallback(async (orderId: string) => {
-    await cancelOrderMutation({
-      orderId: orderId as Id<'orders'>,
-      sessionToken: sessionToken ?? undefined,
-      guestToken: guestToken ?? undefined,
-    });
+    try {
+      await cancelOrderMutation({
+        orderId: orderId as Id<'orders'>,
+        sessionToken: sessionToken ?? undefined,
+        guestToken: guestToken ?? undefined,
+      });
+    } catch (error) {
+      reportRuntimeError('cancel-order', error);
+      throw error;
+    }
   }, [cancelOrderMutation, sessionToken, guestToken]);
 
   const getDropById = useCallback((id: string) => drops.find((d) => d.id === id), [drops]);
@@ -271,6 +319,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       orderedDropIds,
       isLoadingDrops,
       dropsError,
+      startupError: guestTokenError,
+      retryStartup,
       preOrder,
       cancelOrder,
       getDropById,

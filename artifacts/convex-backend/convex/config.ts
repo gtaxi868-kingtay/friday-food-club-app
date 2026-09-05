@@ -5,6 +5,9 @@ import { parseSessionToken } from "./lib/auth";
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 export const DEFAULT_MEMBER_DISCOUNT = 0.1;
 export const DEFAULT_WALLET_FREEZE_THRESHOLD = -50;
+export const DEFAULT_BOOST_PRICE = 15;
+export const DEFAULT_BOOST_DURATION_HOURS = 24;
+export const DEFAULT_NO_SHOW_PENALTY = 10;
 
 export const get = query({
   args: {},
@@ -20,9 +23,15 @@ export const get = query({
         markupRate: 0,
         clubPassPrice: 5,
         walletFreezeThreshold: DEFAULT_WALLET_FREEZE_THRESHOLD,
+        boostPrice: DEFAULT_BOOST_PRICE,
+        noShowPenalty: DEFAULT_NO_SHOW_PENALTY,
       };
     }
-    return cfg;
+    return {
+      ...cfg,
+      boostPrice: cfg.boostPrice ?? DEFAULT_BOOST_PRICE,
+      noShowPenalty: cfg.noShowPenalty ?? DEFAULT_NO_SHOW_PENALTY,
+    };
   },
 });
 
@@ -37,6 +46,8 @@ export const update = mutation({
     markupRate: v.optional(v.number()),
     clubPassPrice: v.optional(v.number()),
     walletFreezeThreshold: v.optional(v.number()),
+    boostPrice: v.optional(v.number()),
+    noShowPenalty: v.optional(v.number()),
   },
   handler: async (ctx, { sessionToken, ...patch }) => {
     const session = await parseSessionToken(sessionToken);
@@ -53,6 +64,8 @@ export const update = mutation({
         markupRate: patch.markupRate ?? 0,
         clubPassPrice: patch.clubPassPrice ?? 5,
         walletFreezeThreshold: patch.walletFreezeThreshold ?? DEFAULT_WALLET_FREEZE_THRESHOLD,
+        boostPrice: patch.boostPrice ?? DEFAULT_BOOST_PRICE,
+        noShowPenalty: patch.noShowPenalty ?? DEFAULT_NO_SHOW_PENALTY,
       });
       return;
     }

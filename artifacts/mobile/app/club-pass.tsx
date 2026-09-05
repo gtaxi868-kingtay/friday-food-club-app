@@ -18,11 +18,12 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@workspace/convex-backend/convex/_generated/api';
 import GlassView from '@/components/GlassView';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/contexts/AuthContext';
+import * as WebBrowser from 'expo-web-browser';
 
 const BENEFITS = [
   { icon: 'pricetag-outline', text: 'Member pricing on every drop — pay less, eat more' },
@@ -42,19 +43,20 @@ export default function ClubPassScreen() {
   const price = config?.clubPassPrice ?? 5;
   const loadingPrice = config === undefined;
 
-  const subscribeMutation = useMutation(api.subscriptions.subscribe);
+  const startCheckout = useAction(api.payments.startClubPassCheckout);
   const cancelMutation = useMutation(api.subscriptions.cancel);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [awaitingPayment, setAwaitingPayment] = useState(false);
 
   const handleSubscribe = async () => {
     if (!user || !token || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      await subscribeMutation({ sessionToken: token });
-      setSuccess(true);
+      const checkout = await startCheckout({ sessionToken: token });
+      setAwaitingPayment(true);
+      await WebBrowser.openBrowserAsync(checkout.checkoutUrl);
     } catch (err: any) {
       setError(err?.data?.message ?? err?.message ?? 'Failed to activate Club Pass');
     } finally {
@@ -146,12 +148,12 @@ export default function ClubPassScreen() {
           </GlassView>
         )}
 
-        {/* Success banner */}
-        {success && (
+        {/* Payment pending banner */}
+        {awaitingPayment && !hasClubPass && (
           <GlassView intensity={30} style={styles.successCard}>
-            <Ionicons name="star" size={20} color="#D4AF37" />
+            <Ionicons name="time-outline" size={20} color="#D4AF37" />
             <Text style={styles.successText}>
-              Welcome to the Club! Your pass is now active.
+              Payment window opened. Your Club Pass activates automatically after WiPay confirms payment.
             </Text>
           </GlassView>
         )}

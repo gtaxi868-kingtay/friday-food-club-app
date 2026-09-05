@@ -19,6 +19,7 @@ import { logger } from "../lib/logger";
 import { sendExpoPush, isValidExpoPushToken } from "../lib/push";
 import {
   getPlatformConfig,
+  clearPlatformConfigCache,
   DEFAULT_PLATFORM_FEE_RATE,
   DEFAULT_MEMBER_DISCOUNT,
   DEFAULT_WALLET_FREEZE_THRESHOLD,
@@ -445,10 +446,18 @@ router.get("/config", async (_req, res) => {
     );
     const cfg = rows[0] ?? {};
     return res.json({
-      platformFeeRate:       toNumber(cfg["platformFeeRate"])       || DEFAULT_PLATFORM_FEE_RATE,
-      memberDiscountRate:    toNumber(cfg["memberDiscountRate"])    || DEFAULT_MEMBER_DISCOUNT,
-      markupRate:            toNumber(cfg["markupRate"])            || 0,
-      clubPassPrice:         toNumber(cfg["clubPassPrice"])         || 5.00,
+      platformFeeRate:       cfg["platformFeeRate"] !== null && cfg["platformFeeRate"] !== undefined
+        ? toNumber(cfg["platformFeeRate"])
+        : DEFAULT_PLATFORM_FEE_RATE,
+      memberDiscountRate:    cfg["memberDiscountRate"] !== null && cfg["memberDiscountRate"] !== undefined
+        ? toNumber(cfg["memberDiscountRate"])
+        : DEFAULT_MEMBER_DISCOUNT,
+      markupRate:            cfg["markupRate"] !== null && cfg["markupRate"] !== undefined
+        ? toNumber(cfg["markupRate"])
+        : 0,
+      clubPassPrice:         cfg["clubPassPrice"] !== null && cfg["clubPassPrice"] !== undefined
+        ? toNumber(cfg["clubPassPrice"])
+        : 5.00,
       walletFreezeThreshold: cfg["walletFreezeThreshold"] !== null && cfg["walletFreezeThreshold"] !== undefined
         ? toNumber(cfg["walletFreezeThreshold"])
         : DEFAULT_WALLET_FREEZE_THRESHOLD,
@@ -483,6 +492,7 @@ router.patch("/config", async (req, res) => {
        SET ${updates}, cfg.updatedAt = datetime()`,
       parse.data as Record<string, unknown>
     );
+    clearPlatformConfigCache();
 
     logger.info({ changes: parse.data }, "Platform config updated");
     return res.json({ success: true, updated: parse.data });

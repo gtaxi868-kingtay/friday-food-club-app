@@ -22,6 +22,7 @@ import type * as lib_session from "../lib/session.js";
 import type * as locations from "../locations.js";
 import type * as nfc from "../nfc.js";
 import type * as orders from "../orders.js";
+import type * as payments from "../payments.js";
 import type * as seed from "../seed.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as uploads from "../uploads.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   locations: typeof locations;
   nfc: typeof nfc;
   orders: typeof orders;
+  payments: typeof payments;
   seed: typeof seed;
   subscriptions: typeof subscriptions;
   uploads: typeof uploads;

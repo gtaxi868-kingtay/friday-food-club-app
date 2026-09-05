@@ -24,11 +24,6 @@
     "web": {
       "favicon": "./assets/images/icon.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "b3964891-7b3c-4260-9699-01a4c40f05df"
-      }
-    },
     "plugins": [
       [
         "expo-router",
@@ -50,6 +45,12 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Friday Food Club uses your location to show you the closest drops first."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Friday Food Club uses your camera to scan a drop tag QR code."
         }
       ]
     ],

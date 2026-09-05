@@ -10,6 +10,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { useMutation, useQuery, useConvex } from 'convex/react';
 import { api } from '@workspace/convex-backend/convex/_generated/api';
+import { reportRuntimeError } from '@/lib/runtimeDiagnostics';
 
 const AUTH_TOKEN_KEY = '@ffc_auth_token';
 
@@ -28,6 +29,8 @@ interface AuthContextValue {
   user:              AuthUser | null;
   token:             string | null;
   isLoading:         boolean;
+  authError:          string | null;
+  retryAuthRestore:   () => void;
   hasClubPass:       boolean;
   clubPassExpiry:    string | null;
   login:             (email: string, password: string) => Promise<void>;
@@ -42,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const convex = useConvex();
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const loginMutation = useMutation(api.auth.login);
   const registerMutation = useMutation(api.auth.register);
@@ -62,20 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clubPassExpiry = subscription?.subscription
     ? new Date(subscription.subscription.expiresAt).toISOString()
     : null;
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
-        if (stored) {
-          setToken(stored);
-          registerPushToken(stored);
-        }
-      } catch (_) { /* non-fatal */ }
-      finally { setIsLoading(false); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const registerPushToken = useCallback(async (bearerToken: string) => {
     try {
@@ -108,27 +98,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await setPushTokenMutation({ sessionToken: bearerToken, expoPushToken });
     } catch (err) {
-      console.warn('[Push] Push token registration error:', err);
+      reportRuntimeError('push-registration', err);
     }
   }, [setPushTokenMutation]);
+
+  const restoreAuth = useCallback(async () => {
+    setIsLoading(true);
+    setAuthError(null);
+    try {
+      const stored = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+      if (stored) {
+        setToken(stored);
+        void registerPushToken(stored);
+      }
+    } catch (error) {
+      reportRuntimeError('auth-restore', error);
+      setAuthError(
+        'Your saved session could not be restored. You can keep browsing, or sign in again.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [registerPushToken]);
+
+  useEffect(() => {
+    void restoreAuth();
+  }, [restoreAuth]);
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await loginMutation({ email, password });
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
     setToken(data.token);
-    registerPushToken(data.token);
+    setAuthError(null);
+    void registerPushToken(data.token);
   }, [loginMutation, registerPushToken]);
 
   const register = useCallback(async (name: string, email: string, password: string, area?: string) => {
     const data = await registerMutation({ name, email, password, area });
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
     setToken(data.token);
-    registerPushToken(data.token);
+    setAuthError(null);
+    void registerPushToken(data.token);
   }, [registerMutation, registerPushToken]);
 
   const logout = useCallback(async () => {
     await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
     setToken(null);
+    setAuthError(null);
   }, []);
 
   const refreshSubscription = useCallback(async () => {
@@ -139,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, token, isLoading,
+      authError, retryAuthRestore: restoreAuth,
       hasClubPass, clubPassExpiry,
       login, register, logout, refreshSubscription,
     }}>

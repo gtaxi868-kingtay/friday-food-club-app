@@ -33,6 +33,8 @@ type AdminChef = {
   rejectionReason?: string | null;
   submittedAt?: number | null;
   totalDrops?: number;
+  cancellationRate?: number;
+  unfulfilledExpiredOrders?: number;
   walletBalance?: number | null;
   creditHistory?: CreditEntry[];
 };
@@ -545,6 +547,7 @@ export default function ChefVerification() {
                   <th className="px-6 py-3 font-medium text-muted-foreground">Handle</th>
                   <th className="px-6 py-3 font-medium text-muted-foreground">Region</th>
                   <th className="px-6 py-3 font-medium text-muted-foreground">Drops</th>
+                  <th className="px-6 py-3 font-medium text-muted-foreground">Reliability</th>
                   <th className="px-6 py-3 font-medium text-muted-foreground">Wallet</th>
                   <th className="px-6 py-3 font-medium text-muted-foreground">Credit History</th>
                   <th className="px-6 py-3 font-medium text-muted-foreground">Status</th>
@@ -557,6 +560,9 @@ export default function ChefVerification() {
                   const isOpen = openCreditId === chef._id;
                   const form = getWalletForm(chef._id);
                   const isSubmitting = creditingChefId === chef._id;
+                  const cancellationRate = chef.cancellationRate ?? 0;
+                  const unfulfilledExpiredOrders = chef.unfulfilledExpiredOrders ?? 0;
+                  const isRisky = cancellationRate > 0.2 || unfulfilledExpiredOrders > 0;
 
                   return (
                     <Fragment key={chef._id}>
@@ -578,6 +584,17 @@ export default function ChefVerification() {
                         <td className="px-6 py-4 text-muted-foreground">{chef.handle}</td>
                         <td className="px-6 py-4 text-muted-foreground">{chef.region || "—"}</td>
                         <td className="px-6 py-4">{chef.totalDrops || 0}</td>
+                        <td className="px-6 py-4">
+                          <div className={`text-xs ${isRisky ? "text-destructive" : "text-muted-foreground"}`}>
+                            {Math.round(cancellationRate * 100)}% cancelled
+                            {unfulfilledExpiredOrders > 0 && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <AlertTriangle className="w-3 h-3" />
+                                {unfulfilledExpiredOrders} no-show{unfulfilledExpiredOrders === 1 ? "" : "s"}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-6 py-4">
                           <WalletBadge balance={chef.walletBalance} freezeThreshold={freezeThreshold} />
                         </td>

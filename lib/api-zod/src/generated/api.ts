@@ -392,6 +392,24 @@ export const GetChefStatusResponse = zod.object({
 
 
 /**
+ * @summary Authenticated chef's wallet — balance, freeze status, earnings, and full admin-credit history
+ */
+export const GetMyWalletResponse = zod.object({
+  "chefId": zod.string().optional(),
+  "walletBalance": zod.number().optional(),
+  "freezeThreshold": zod.number().optional().describe('Wallet balance below which drop creation is blocked'),
+  "isFrozen": zod.boolean().optional().describe('True when walletBalance < freezeThreshold'),
+  "cashDebt": zod.number().optional().describe('Absolute value of negative balance (0 if balance is positive)'),
+  "totalEarnings": zod.number().optional().describe('All-time sum of net chefShare for completed drops'),
+  "creditHistory": zod.array(zod.object({
+  "amount": zod.number().nullish().describe('TTD amount credited; null for records migrated from legacy schema'),
+  "note": zod.string().nullish(),
+  "createdAt": zod.string().nullish().describe('ISO datetime of this credit')
+})).optional().describe('All admin wallet credits applied to this chef, newest first')
+}).describe('Wallet view for the authenticated chef — includes full admin-credit history')
+
+
+/**
  * @summary Submit a chef application (BUYER → CHEF upgrade)
  */
 export const applyAsChefBodyKitchenNameMin = 2;
@@ -593,7 +611,8 @@ export const adminCreditChefWalletBodyAmountMin = 0.01;
 
 export const AdminCreditChefWalletBody = zod.object({
   "amount": zod.number().min(adminCreditChefWalletBodyAmountMin).describe('TTD amount to credit (must be positive)'),
-  "note": zod.string().optional().describe('Optional admin note recorded on the chef node')
+  "note": zod.string().optional().describe('Optional admin note recorded on the chef node'),
+  "idempotencyKey": zod.string().optional().describe('Client-generated request key; a second request with the same key within 60 s returns the first response without creating a duplicate credit')
 })
 
 export const AdminCreditChefWalletResponse = zod.object({

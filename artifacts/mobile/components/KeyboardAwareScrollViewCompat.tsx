@@ -1,8 +1,6 @@
 import { Platform, ScrollView, ScrollViewProps } from 'react-native';
-import {
-  KeyboardAwareScrollView,
-  KeyboardAwareScrollViewProps,
-} from 'react-native-keyboard-controller';
+import type { KeyboardAwareScrollViewProps } from 'react-native-keyboard-controller';
+import { getKeyboardController } from '@/lib/nativeCompatibility';
 
 type Props = KeyboardAwareScrollViewProps & ScrollViewProps;
 
@@ -11,7 +9,9 @@ export function KeyboardAwareScrollViewCompat({
   keyboardShouldPersistTaps = 'handled',
   ...props
 }: Props) {
-  if (Platform.OS === 'web') {
+  const KeyboardAwareScrollView = getKeyboardController()?.KeyboardAwareScrollView;
+
+  if (Platform.OS === 'web' || !KeyboardAwareScrollView) {
     return (
       <ScrollView
         keyboardShouldPersistTaps={keyboardShouldPersistTaps}

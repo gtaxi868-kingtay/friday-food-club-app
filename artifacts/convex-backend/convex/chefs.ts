@@ -27,7 +27,17 @@ export const getWithDrops = query({
     const chef = await ctx.db.get(chefId);
     if (!chef) return null;
     const drops = await ctx.db.query("drops").withIndex("by_chefId", (q) => q.eq("chefId", chefId)).collect();
-    return { ...chef, drops };
+    // The stored totalDrops/successfulDrops only get set at chef creation
+    // (always 0) and are never incremented as real drops resolve — compute
+    // live from the drops themselves instead, so the profile's success rate
+    // reflects reality for every chef, not just hand-seeded ones.
+    return {
+      ...chef,
+      totalDrops: drops.length,
+      successfulDrops: drops.filter((d) => d.status === "SOLD_OUT").length,
+      cancelledDrops: drops.filter((d) => d.status === "CANCELLED").length,
+      drops,
+    };
   },
 });
 
@@ -35,11 +45,16 @@ export const getWithDrops = query({
 export const drops = query({
   args: { chefId: v.id("chefs"), limit: v.optional(v.number()) },
   handler: async (ctx, { chefId, limit }) => {
+    const now = Date.now();
     const rows = await ctx.db.query("drops").withIndex("by_chefId", (q) => q.eq("chefId", chefId)).collect();
     return rows
       .sort((a, b) => b._creationTime - a._creationTime)
       .slice(0, Math.min(limit ?? 30, 50))
-      .map((d) => ({ ...d, remaining: Math.max(0, d.inventory - d.currentOrders) }));
+      .map((d) => ({
+        ...d,
+        remaining: Math.max(0, d.inventory - d.currentOrders),
+        isFeatured: !!d.isFeatured && (d.featuredUntil === undefined || d.featuredUntil > now),
+      }));
   },
 });
 

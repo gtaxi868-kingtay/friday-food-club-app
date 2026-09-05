@@ -41,7 +41,7 @@ export const subscribe = mutation({
     const subId = await ctx.db.insert("subscriptions", {
       userId: session.userId,
       tier: "CLUB_PASS",
-      status: "ACTIVE",
+      status: "PENDING_PAYMENT",
       price: CLUB_PASS_PRICE,
       startedAt: now,
       expiresAt,
@@ -50,9 +50,10 @@ export const subscribe = mutation({
       subscriptionId: subId,
       userId: session.userId,
       tier: "CLUB_PASS" as const,
-      status: "ACTIVE" as const,
+      status: "PENDING_PAYMENT" as const,
       price: CLUB_PASS_PRICE,
       expiresAt,
+      paymentRequired: true,
       benefits: [
         "10% member discount on all drops",
         "Priority access to limited drops",

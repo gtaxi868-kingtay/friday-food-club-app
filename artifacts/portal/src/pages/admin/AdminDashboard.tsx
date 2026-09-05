@@ -27,6 +27,7 @@ export default function AdminDashboard() {
   const config = useQuery(api.config.get, {});
   const chefsData = useQuery(api.admin.listChefs, args as any);
   const coverageData = useQuery(api.admin.coverage, args as any);
+  const noShowDrops = useQuery(api.admin.noShowDrops, args as any);
 
   const statsLoading = stats === undefined;
   const ledgerLoading = ledger === undefined;
@@ -38,11 +39,15 @@ export default function AdminDashboard() {
   const updateConfigMutation = useMutation(api.config.update);
   const creditWalletMutation = useMutation(api.admin.creditChefWallet);
   const addChefMutation = useMutation(api.admin.addChef);
+  const resolveNoShowMutation = useMutation(api.admin.resolveNoShow);
 
   const [feeRate, setFeeRate] = useState<string>("");
   const [passPrice, setPassPrice] = useState<string>("");
   const [freezeThreshold, setFreezeThreshold] = useState<string>("");
+  const [boostPrice, setBoostPrice] = useState<string>("");
+  const [noShowPenalty, setNoShowPenalty] = useState<string>("");
   const [configUpdating, setConfigUpdating] = useState(false);
+  const [resolvingDropId, setResolvingDropId] = useState<string | null>(null);
   const [walletForms, setWalletForms] = useState<Record<string, WalletForm>>({});
   const [creditingChefId, setCreditingChefId] = useState<string | null>(null);
 
@@ -58,6 +63,8 @@ export default function AdminDashboard() {
     setFeeRate((config.platformFeeRate * 100).toString());
     setPassPrice(config.clubPassPrice.toString());
     setFreezeThreshold((config.walletFreezeThreshold ?? -50).toString());
+    setBoostPrice((config.boostPrice ?? 15).toString());
+    setNoShowPenalty((config.noShowPenalty ?? 10).toString());
   }
 
   const formatCurrency = (amount: number | undefined) => {
@@ -87,6 +94,8 @@ export default function AdminDashboard() {
         platformFeeRate: parseFloat(feeRate) / 100,
         clubPassPrice: parseFloat(passPrice),
         walletFreezeThreshold: parseFloat(freezeThreshold),
+        boostPrice: parseFloat(boostPrice),
+        noShowPenalty: parseFloat(noShowPenalty),
       });
       toast({ title: "Config Saved", description: "Platform settings updated." });
     } catch (err: any) {
@@ -143,6 +152,22 @@ export default function AdminDashboard() {
       toast({ title: "Failed", description: err?.data?.message ?? err?.message, variant: "destructive" });
     } finally {
       setAddChefLoading(false);
+    }
+  };
+
+  const handleResolveNoShow = async (dropId: string, dropTitle: string) => {
+    setResolvingDropId(dropId);
+    try {
+      const result = await resolveNoShowMutation({ sessionToken, dropId: dropId as any });
+      const description =
+        result.mode === "chef_no_show"
+          ? `Chef never showed — refunded ${result.refundedOrders} buyer(s) for "${dropTitle}" and docked the chef ${formatCurrency(result.penalty)}.`
+          : `Chef showed up — ${result.releasedOrders} unclaimed order(s) on "${dropTitle}" forfeited to the chef, no penalty.`;
+      toast({ title: "No-Show Resolved", description });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.data?.message ?? "Failed to resolve.", variant: "destructive" });
+    } finally {
+      setResolvingDropId(null);
     }
   };
 
@@ -233,6 +258,83 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="bg-card border-card-border">
+          <CardContent className="p-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Repeat Buyer Rate</p>
+                <h3 className="text-2xl font-serif font-bold mt-2">
+                  {stats?.platform?.repeatBuyerRate !== undefined ? `${Math.round(stats.platform.repeatBuyerRate * 100)}%` : "..."}
+                </h3>
+              </div>
+              <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-primary" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              {formatNumber(stats?.platform?.totalBuyers)} buyers ever ordered — the number that says whether this holds beyond novelty.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className={`bg-card ${(stats?.platform?.unfulfilledExpiredOrders ?? 0) > 0 ? "border-destructive/40" : "border-card-border"}`}>
+          <CardContent className="p-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">No-Show Risk</p>
+                <h3 className={`text-2xl font-serif font-bold mt-2 ${(stats?.platform?.unfulfilledExpiredOrders ?? 0) > 0 ? "text-destructive" : ""}`}>
+                  {formatNumber(stats?.platform?.unfulfilledExpiredOrders)}
+                </h3>
+              </div>
+              <div className="w-8 h-8 rounded-md bg-destructive/10 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-destructive" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Paid orders left unclaimed past their drop's expiry — see queue below.</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── No-Show Queue ─────────────────────────────────────────────────────── */}
+      {!!noShowDrops?.length && (
+        <Card className="bg-card border-destructive/40">
+          <CardHeader>
+            <CardTitle className="font-serif flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-destructive" />
+              No-Show Queue
+            </CardTitle>
+            <CardDescription>Expired drops still holding paid orders nobody picked up. Resolving refunds those buyers and docks the chef's wallet.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {noShowDrops.map((row: any) => (
+              <div key={row.dropId} className="flex items-center justify-between gap-4 p-3 rounded-lg bg-secondary/30 border border-border">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{row.dropTitle}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {row.chefName ?? "Unknown chef"} · {row.unfulfilledOrders} unfulfilled order{row.unfulfilledOrders === 1 ? "" : "s"} · {formatCurrency(row.amountHeld)} held
+                  </p>
+                  <p className={`text-xs mt-0.5 ${row.chefShowedUp ? "text-muted-foreground" : "text-destructive"}`}>
+                    {row.chefShowedUp
+                      ? "Chef fulfilled other orders here — these look like buyer no-shows."
+                      : "Nothing on this drop was ever fulfilled — looks like the chef never showed."}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant={row.chefShowedUp ? "outline" : "destructive"}
+                  disabled={resolvingDropId === row.dropId}
+                  onClick={() => handleResolveNoShow(row.dropId, row.dropTitle)}
+                >
+                  {resolvingDropId === row.dropId ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  {row.chefShowedUp ? "Release to Chef" : "Resolve & Refund"}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Regional Coverage ─────────────────────────────────────────────────── */}
       <Card className="bg-card border-card-border">
@@ -439,6 +541,26 @@ export default function AdminDashboard() {
                       placeholder="-50"
                     />
                     <p className="text-xs text-muted-foreground">Must be ≤ 0. Chefs below this balance cannot post drops.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Boost Price (TTD, 24h)</label>
+                    <Input
+                      type="number"
+                      value={boostPrice}
+                      onChange={(e) => setBoostPrice(e.target.value)}
+                      className="bg-secondary/30"
+                    />
+                    <p className="text-xs text-muted-foreground">What chefs pay from their own wallet to self-feature a drop for 24 hours.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">No-Show Penalty (TTD/order)</label>
+                    <Input
+                      type="number"
+                      value={noShowPenalty}
+                      onChange={(e) => setNoShowPenalty(e.target.value)}
+                      className="bg-secondary/30"
+                    />
+                    <p className="text-xs text-muted-foreground">Docked per unfulfilled order when you resolve a no-show below.</p>
                   </div>
                   <Button
                     onClick={handleConfigSave}

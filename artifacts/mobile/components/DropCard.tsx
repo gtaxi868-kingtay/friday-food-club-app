@@ -89,6 +89,14 @@ export default function DropCard({ drop, hasOrdered, onPress }: Props) {
           <Text style={styles.cuisineText}>{drop.cuisine.toUpperCase()}</Text>
         </View>
 
+        {/* Featured ribbon — chef-boosted or admin-curated placement */}
+        {drop.isFeatured && (
+          <View style={styles.featuredBadge}>
+            <Ionicons name="sparkles" size={10} color="#0E0E0E" />
+            <Text style={styles.featuredText}>FEATURED</Text>
+          </View>
+        )}
+
         {/* Countdown — top right */}
         <GlassView
           intensity={50}
@@ -214,6 +222,24 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     color: 'rgba(255,255,255,0.8)',
     letterSpacing: 1.8,
+  },
+  featuredBadge: {
+    position: 'absolute',
+    top: 44,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D4AF37',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  featuredText: {
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    color: '#0E0E0E',
+    letterSpacing: 1.4,
   },
   timerPill: {
     position: 'absolute',

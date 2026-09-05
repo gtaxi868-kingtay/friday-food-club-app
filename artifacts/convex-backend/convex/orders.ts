@@ -129,9 +129,9 @@ export const place = mutation({
       status: "PENDING",
       isMemberOrder: isMember,
       paymentMethod,
-      escrowStatus: paymentMethod === "CASH" ? "CASH" : "HELD",
+      escrowStatus: paymentMethod === "CASH" ? "CASH" : "PENDING_PAYMENT",
       pickupToken: genPickupToken(),
-      idempotencyKey,
+      idempotencyKey: idempotencyKey ?? `order_${crypto.randomUUID()}`,
     });
 
     const order = await ctx.db.get(orderId);
@@ -199,7 +199,13 @@ export const cancel = mutation({
     const drop = await ctx.db.get(order.dropId);
     await ctx.db.patch(orderId, {
       status: "CANCELLED",
-      escrowStatus: order.escrowStatus === "HELD" || order.escrowStatus === "CASH" ? "CANCELLED" : order.escrowStatus,
+      escrowStatus:
+        order.escrowStatus === "HELD" ||
+        order.escrowStatus === "PENDING_PAYMENT" ||
+        order.escrowStatus === "PAYMENT_FAILED" ||
+        order.escrowStatus === "CASH"
+          ? "CANCELLED"
+          : order.escrowStatus,
     });
     if (drop) {
       const newCount = Math.max(0, drop.currentOrders - 1);

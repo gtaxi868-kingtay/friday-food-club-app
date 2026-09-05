@@ -25,6 +25,7 @@ export * from './chefApplicationInput';
 export * from './chefApplicationResult';
 export * from './chefDetail';
 export * from './chefList';
+export * from './chefOwnWallet';
 export * from './chefVerificationStatus';
 export * from './chefVerificationStatusVerificationStatus';
 export * from './chefWallet';

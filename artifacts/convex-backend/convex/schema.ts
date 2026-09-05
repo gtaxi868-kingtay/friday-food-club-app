@@ -116,6 +116,9 @@ export default defineSchema({
     chefEarnings: v.optional(v.number()),
     isSecret: v.optional(v.boolean()),
     isFeatured: v.optional(v.boolean()),
+    // Self-serve chef boost expires; admin-toggled features (CurationPanel)
+    // leave this unset, so they never lapse on their own.
+    featuredUntil: v.optional(v.number()),
   })
     .index("by_chefId", ["chefId"])
     .index("by_status", ["status"])
@@ -141,11 +144,13 @@ export default defineSchema({
     isMemberOrder: v.boolean(),
     paymentMethod: v.union(v.literal("DIGITAL"), v.literal("CASH")),
     escrowStatus: v.union(
+      v.literal("PENDING_PAYMENT"),
       v.literal("HELD"),
       v.literal("RELEASED"),
       v.literal("REFUNDED"),
       v.literal("CASH"),
       v.literal("CASH_RECONCILED"),
+      v.literal("PAYMENT_FAILED"),
       v.literal("CANCELLED"),
     ),
     pickupToken: v.string(),
@@ -174,15 +179,48 @@ export default defineSchema({
   subscriptions: defineTable({
     userId: v.id("users"),
     tier: v.string(),
-    status: v.union(v.literal("ACTIVE"), v.literal("CANCELLED")),
+    status: v.union(v.literal("PENDING_PAYMENT"), v.literal("ACTIVE"), v.literal("CANCELLED")),
     price: v.number(),
     stripeCustomerId: v.optional(v.string()),
+    paymentId: v.optional(v.id("paymentTransactions")),
     startedAt: v.number(),
     expiresAt: v.number(),
     cancelledAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),
+
+  // ── WiPay transaction ledger ─────────────────────────────────────────
+  // Provider state is kept separate from fulfillment state. A successful
+  // browser redirect is never enough to mark an order paid; only the signed
+  // webhook may move a transaction to PAID.
+  paymentTransactions: defineTable({
+    kind: v.union(v.literal("ORDER"), v.literal("CLUB_PASS")),
+    orderId: v.optional(v.id("orders")),
+    subscriptionId: v.optional(v.id("subscriptions")),
+    userId: v.string(),
+    provider: v.literal("WIPAY"),
+    providerReference: v.optional(v.string()),
+    amount: v.number(),
+    currency: v.literal("TTD"),
+    status: v.union(
+      v.literal("INITIATED"),
+      v.literal("PENDING"),
+      v.literal("PAID"),
+      v.literal("FAILED"),
+      v.literal("REFUNDED"),
+    ),
+    checkoutUrl: v.optional(v.string()),
+    rawStatus: v.optional(v.string()),
+    refundRequired: v.optional(v.boolean()),
+    idempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orderId", ["orderId"])
+    .index("by_subscriptionId", ["subscriptionId"])
+    .index("by_providerReference", ["providerReference"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
 
   // ── Locations (named pickup spots) ────────────────────────────────────
   locations: defineTable({
@@ -232,5 +270,7 @@ export default defineSchema({
     markupRate: v.number(),
     clubPassPrice: v.number(),
     walletFreezeThreshold: v.number(),
+    boostPrice: v.optional(v.number()),
+    noShowPenalty: v.optional(v.number()),
   }).index("by_key", ["key"]),
 });

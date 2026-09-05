@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/public-site/"
+title = "Friday Food Club — Public Site"
+description = "A cinematic public home for Friday Food Club where members discover chef-made drops, Secret Drops, and keychain-powered food culture. It turns the brand into an immersive, shareable landing experience while guiding members and chefs into the existing product."
+version = "1.0.0"
+id = "artifacts/public-site"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/public-site/" ]
+localPort = 20918
+
+[services.development]
+run = "pnpm --filter @workspace/public-site run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/public-site", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/public-site/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20918"
+BASE_PATH = "/public-site/"

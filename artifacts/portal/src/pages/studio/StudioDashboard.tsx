@@ -1,16 +1,20 @@
+import { useState } from "react";
 import { useSession } from "@/components/SessionProvider";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { Link } from "wouter";
-import { Plus, Wallet, TrendingUp, Clock, Package, CheckCircle2, AlertTriangle, Banknote, XCircle, RefreshCw } from "lucide-react";
+import { Plus, Wallet, TrendingUp, Clock, Package, CheckCircle2, AlertTriangle, Banknote, XCircle, RefreshCw, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
 
 export default function StudioDashboard() {
   const { user, token } = useSession();
+  const { toast } = useToast();
   const chefId = user?.chefId || "";
+  const [boostingId, setBoostingId] = useState<string | null>(null);
 
   const rawDrops = useQuery(api.chefs.drops, chefId ? { chefId: chefId as any, limit: 50 } : "skip");
   const dropsLoading = !!chefId && rawDrops === undefined;
@@ -18,6 +22,23 @@ export default function StudioDashboard() {
 
   const walletData = useQuery(api.fulfillment.wallet, chefId && token ? { sessionToken: token, chefId: chefId as any } : "skip");
   const walletLoading = !!chefId && walletData === undefined;
+
+  const config = useQuery(api.config.get, {});
+  const boostPrice = config?.boostPrice ?? 15;
+  const boostMutation = useMutation(api.drops.boost);
+
+  const handleBoost = async (dropId: string, dropTitle: string) => {
+    if (!token) return;
+    setBoostingId(dropId);
+    try {
+      await boostMutation({ sessionToken: token, dropId: dropId as any });
+      toast({ title: "Drop Boosted", description: `"${dropTitle}" is now featured at the top of the feed for 24 hours.` });
+    } catch (err: any) {
+      toast({ title: "Boost Failed", description: err?.data?.message ?? "Could not boost this drop.", variant: "destructive" });
+    } finally {
+      setBoostingId(null);
+    }
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-TT', { style: 'currency', currency: 'TTD' }).format(amount);
@@ -236,9 +257,16 @@ export default function StudioDashboard() {
                 <CardContent className="p-5">
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="font-bold text-sm leading-tight">{drop.title}</h3>
-                    <Badge variant="outline" className={`text-xs shrink-0 ml-2 ${drop.status === 'SOLD_OUT' ? 'border-yellow-500/40 text-yellow-400' : ''}`}>
-                      {drop.status}
-                    </Badge>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {drop.isFeatured && (
+                        <Badge className="text-xs bg-primary/10 text-primary border-none shadow-none">
+                          <Sparkles className="w-3 h-3 mr-1" /> Featured
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className={`text-xs ${drop.status === 'SOLD_OUT' ? 'border-yellow-500/40 text-yellow-400' : ''}`}>
+                        {drop.status}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="space-y-2 text-xs text-muted-foreground">
                     <div className="flex justify-between">
@@ -255,6 +283,22 @@ export default function StudioDashboard() {
                       <span>{drop.remaining} left of {drop.inventory}</span>
                     </div>
                   </div>
+                  {drop.status === 'ACTIVE' && !drop.isFeatured && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full mt-3 border-primary/30 text-primary hover:bg-primary/10"
+                      disabled={boostingId === drop.id}
+                      onClick={() => handleBoost(drop.id, drop.title)}
+                    >
+                      {boostingId === drop.id ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5 mr-2" />
+                      )}
+                      Boost for TTD {boostPrice} (24h)
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}

@@ -30,6 +30,7 @@ import type {
   ChefApplicationResult,
   ChefDetail,
   ChefList,
+  ChefOwnWallet,
   ChefVerificationStatus,
   ChefWallet,
   Drop,
@@ -999,6 +1000,83 @@ export function useGetChefStatus<TData = Awaited<ReturnType<typeof getChefStatus
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetChefStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMyWalletUrl = () => {
+
+
+
+
+  return `/api/chefs/me/wallet`
+}
+
+/**
+ * @summary Authenticated chef's wallet — balance, freeze status, earnings, and full admin-credit history
+ */
+export const getMyWallet = async ( options?: RequestInit): Promise<ChefOwnWallet> => {
+
+  return customFetch<ChefOwnWallet>(getGetMyWalletUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyWalletQueryKey = () => {
+    return [
+    `/api/chefs/me/wallet`
+    ] as const;
+    }
+
+
+export const getGetMyWalletQueryOptions = <TData = Awaited<ReturnType<typeof getMyWallet>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyWalletQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyWallet>>> = ({ signal }) => getMyWallet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyWallet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyWalletQueryResult = NonNullable<Awaited<ReturnType<typeof getMyWallet>>>
+export type GetMyWalletQueryError = ErrorType<void>
+
+
+/**
+ * @summary Authenticated chef's wallet — balance, freeze status, earnings, and full admin-credit history
+ */
+
+export function useGetMyWallet<TData = Awaited<ReturnType<typeof getMyWallet>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyWalletQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

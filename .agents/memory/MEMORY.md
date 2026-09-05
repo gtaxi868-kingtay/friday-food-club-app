@@ -1,0 +1,9 @@
+- [Neo4j Aura database name](neo4j-aura-config.md) — Aura uses a custom DB name; never hardcode "neo4j"; omit database param to hit home DB
+- [AuthContext contract](auth-context-contract.md) — AuthContext replaced with full auth layer; exposes user, token, hasClubPass, clubPassExpiry, login, logout, refreshSubscription, authHeaders
+- [Native Android builds](native-android-builds.md) — this workspace has Expo project linkage but no local Android SDK, Gradle, or callable EAS build tool
+- [Generated Zod UUID compatibility](generated-zod-uuid-compat.md) — OpenAPI uuid formats currently generate an unsupported helper in this workspace's Zod 3 client
+- [Remote repository freshness](remote-repository-freshness.md) — when a user supplies a repository URL, compare it before trusting the local checkout as the source of truth
+- [WiPay adapter boundary](wipay-adapter-boundary.md) — keep merchant-specific checkout and callback formats behind a verified adapter contract
+- [Mobile Convex environment](mobile-convex-env.md) — Expo and Vite need separate public variable names for the same Convex deployment URL
+- [Expo Go workflow prompt](expo-go-workflow.md) — keep the Replit Expo workflow noninteractive so phone connections cannot hang on CLI account selection
+- [GitHub connector writes](github-connector-writes.md) — GitHub reads may work while commit/push endpoints are blocked by Cloudflare from the Replit integration proxy

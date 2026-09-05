@@ -10,6 +10,7 @@
 import { Readable } from "stream";
 import { Router } from "express";
 import { z } from "zod";
+import neo4j from "neo4j-driver";
 import { runRead, runWrite, toNumber } from "../lib/neo4j";
 import { requireAuth, requireVerifiedChef, getSession, type SessionUser } from "./auth";
 import { logger } from "../lib/logger";
@@ -39,6 +40,17 @@ const CreateDropSchema = z.object({
   imageUrl:        z.string().max(500).optional().nullable(), // chef-uploaded food photo path
   tags:            z.array(z.string()).max(5).default([]),
   isSecret:        z.boolean().default(false), // secret drops: only orderable on Fridays
+});
+
+const UpdateDropSchema = z.object({
+  title:           z.string().min(3).max(120).optional(),
+  description:     z.string().min(10).max(2000).optional(),
+  price:           z.number().positive().optional(),
+  inventory:       z.number().int().min(1).max(500).optional(),
+  minOrders:       z.number().int().min(1).max(500).optional(),
+  pickupLocation:  z.string().min(3).max(200).optional(),
+  expiresAt:       z.string().datetime().optional(),
+  tags:            z.array(z.string()).max(5).optional(),
 });
 
 // ── GET /api/drops/platform-config ───────────────────────────────────────────
@@ -73,13 +85,16 @@ router.get("/", async (req, res) => {
     const latRaw      = req.query["lat"]       as string | undefined;
     const lonRaw      = req.query["lon"]       as string | undefined;
     const radiusRaw   = req.query["radius"]    as string | undefined;   // metres
+    const cursor      = req.query["cursor"]    as string | undefined;
+    const limitRaw    = Number.parseInt((req.query["limit"] as string | undefined) ?? "30", 10);
+    const limit        = neo4j.int(Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, limitRaw)) : 30);
 
     const lat    = latRaw    != null ? parseFloat(latRaw)    : null;
     const lon    = lonRaw    != null ? parseFloat(lonRaw)    : null;
     const radius = radiusRaw != null ? parseFloat(radiusRaw) : null;
     const hasGps = lat != null && lon != null && !Number.isNaN(lat) && !Number.isNaN(lon);
 
-    const params: Record<string, unknown> = { statuses };
+    const params: Record<string, unknown> = { statuses, cursor: cursor || null, limit };
     const extraFilters: string[] = [];
 
     if (mealSlot && MealSlot.safeParse(mealSlot).success) {
@@ -106,6 +121,7 @@ router.get("/", async (req, res) => {
          MATCH (c:Chef)-[:POSTED]->(d:Drop)
          WHERE d.status IN $statuses
            AND d.expiresAt > datetime()
+            AND ($cursor IS NULL OR d.expiresAt > datetime($cursor))
            ${extraFilters.join(" ")}
          WITH d, c, userPoint,
               CASE WHEN c.lat IS NOT NULL AND c.lon IS NOT NULL
@@ -137,7 +153,8 @@ router.get("/", async (req, res) => {
              successfulDrops: c.successfulDrops, points: c.points, rank: c.rank
            } AS chef,
            distMeters        AS distMeters
-         ORDER BY coalesce(d.isFeatured, false) DESC, distMeters ASC, d.expiresAt ASC`,
+          ORDER BY coalesce(d.isFeatured, false) DESC, distMeters ASC, d.expiresAt ASC
+          LIMIT $limit`,
         params
       );
 
@@ -146,7 +163,12 @@ router.get("/", async (req, res) => {
         const dm = toNumber(distMeters);
         return { ...normalise(rest), distanceMetres: dm < 999999 ? dm : null, isNearby: dm < 999999 };
       });
-      return res.json({ drops, total: drops.length });
+       const lastDrop = drops[drops.length - 1] as { expiresAt?: unknown } | undefined;
+       return res.json({
+         drops,
+         total: drops.length,
+         nextCursor: drops.length === Number(limit.toString()) ? String(lastDrop?.expiresAt ?? '') || null : null,
+       });
     }
 
     // No GPS — fall back to string-area proximity ranking
@@ -154,6 +176,7 @@ router.get("/", async (req, res) => {
       `MATCH (c:Chef)-[:POSTED]->(d:Drop)
        WHERE d.status IN $statuses
          AND d.expiresAt > datetime()
+         AND ($cursor IS NULL OR d.expiresAt > datetime($cursor))
          ${extraFilters.join(" ")}
        RETURN
          d.id             AS id,
@@ -184,7 +207,8 @@ router.get("/", async (req, res) => {
              OR toLower(coalesce(c.region, '')) CONTAINS toLower($area)
            ) THEN 0 ELSE 1
          END AS proximityRank
-       ORDER BY coalesce(d.isFeatured, false) DESC, proximityRank ASC, d.expiresAt ASC`,
+       ORDER BY coalesce(d.isFeatured, false) DESC, proximityRank ASC, d.expiresAt ASC
+       LIMIT $limit`,
       { ...params, area: area ?? null }
     );
 
@@ -192,7 +216,12 @@ router.get("/", async (req, res) => {
       const { proximityRank, ...rest } = r;
       return { ...normalise(rest), isNearby: area ? toNumber(proximityRank) === 0 : false };
     });
-    return res.json({ drops, total: drops.length });
+     const lastDrop = drops[drops.length - 1] as { expiresAt?: unknown } | undefined;
+     return res.json({
+       drops,
+       total: drops.length,
+        nextCursor: drops.length === Number(limit.toString()) ? String(lastDrop?.expiresAt ?? '') || null : null,
+     });
   } catch (err) {
     logger.error({ err }, "GET /api/drops failed");
     return res.status(500).json({ error: "Failed to fetch drops" });
@@ -428,6 +457,99 @@ router.post("/", requireVerifiedChef(), async (req, res) => {
   } catch (err) {
     logger.error({ err }, "POST /api/drops failed");
     return res.status(500).json({ error: "Failed to create drop" });
+  }
+});
+
+// ── PATCH /api/drops/:id ──────────────────────────────────────────────────────
+// Chefs can update their own live drop details. Inventory may never be lowered
+// below already-placed orders, and completed/cancelled drops are immutable.
+
+router.patch("/:id", requireAuth("CHEF", "ADMIN"), async (req, res) => {
+  const parse = UpdateDropSchema.safeParse(req.body);
+  if (!parse.success || Object.keys(parse.data).length === 0) {
+    return res.status(400).json({ error: "Provide at least one valid drop field", issues: parse.success ? undefined : parse.error.issues });
+  }
+
+  const session = getSession(req)!;
+  try {
+    const ownershipQuery = session.role === "ADMIN"
+      ? `MATCH (d:Drop {id: $id})
+         RETURN d.id AS id, d.status AS status, d.currentOrders AS currentOrders, d.inventory AS inventory`
+      : `MATCH (u:User {id: $userId})-[:IS_CHEF]->(c:Chef)-[:POSTED]->(d:Drop {id: $id})
+         RETURN d.id AS id, d.status AS status, d.currentOrders AS currentOrders, d.inventory AS inventory`;
+    const existing = await runRead<{ id: string; status: string; currentOrders: unknown; inventory: unknown }>(
+      ownershipQuery,
+      { id: req.params["id"], userId: session.userId },
+    );
+    if (existing.length === 0) return res.status(404).json({ error: "Drop not found or not owned by you" });
+    const current = existing[0]!;
+    if (!["ACTIVE", "UNLOCKED"].includes(current.status)) {
+      return res.status(409).json({ error: "Only live drops can be edited" });
+    }
+
+    const data = parse.data;
+    const currentOrders = toNumber(current.currentOrders);
+    const inventory = data.inventory ?? toNumber(current.inventory);
+    if (inventory < currentOrders) {
+      return res.status(400).json({ error: `Plate limit cannot be lower than ${currentOrders} existing orders` });
+    }
+    if (data.minOrders !== undefined && data.minOrders > inventory) {
+      return res.status(400).json({ error: "Minimum orders cannot exceed the plate limit" });
+    }
+    if (data.expiresAt && new Date(data.expiresAt).getTime() <= Date.now()) {
+      return res.status(400).json({ error: "Drop expiry must be in the future" });
+    }
+
+    const updates = Object.entries(data)
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => `d.${key} = $${key}`)
+      .join(", ");
+    const rows = await runWrite<Record<string, unknown>>(
+      `MATCH (d:Drop {id: $id})
+       SET ${updates}, d.updatedAt = datetime()
+       RETURN d.id AS id, d.title AS title, d.description AS description,
+              d.mealSlot AS mealSlot, d.price AS price, d.inventory AS inventory,
+              d.minOrders AS minOrders, d.currentOrders AS currentOrders,
+              d.status AS status, d.pickupLocation AS pickupLocation,
+              d.expiresAt AS expiresAt, d.imageIndex AS imageIndex,
+              d.imageUrl AS imageUrl, d.tags AS tags, d.isSecret AS isSecret`,
+      { id: req.params["id"], ...data },
+    );
+    return res.json(normalise(rows[0]!));
+  } catch (err) {
+    logger.error({ err, dropId: req.params["id"] }, "PATCH /api/drops/:id failed");
+    return res.status(500).json({ error: "Failed to update drop" });
+  }
+});
+
+// ── PATCH /api/drops/:id/cancel ───────────────────────────────────────────────
+
+router.patch("/:id/cancel", requireAuth("CHEF", "ADMIN"), async (req, res) => {
+  const session = getSession(req)!;
+  try {
+    const ownershipQuery = session.role === "ADMIN"
+      ? `MATCH (d:Drop {id: $id}) RETURN d.id AS id, d.status AS status`
+      : `MATCH (u:User {id: $userId})-[:IS_CHEF]->(c:Chef)-[:POSTED]->(d:Drop {id: $id})
+         RETURN d.id AS id, d.status AS status`;
+    const existing = await runRead<{ id: string; status: string }>(
+      ownershipQuery,
+      { id: req.params["id"], userId: session.userId },
+    );
+    if (existing.length === 0) return res.status(404).json({ error: "Drop not found or not owned by you" });
+    if (!["ACTIVE", "UNLOCKED", "SOLD_OUT"].includes(existing[0]!.status)) {
+      return res.status(409).json({ error: "This drop can no longer be cancelled" });
+    }
+
+    const rows = await runWrite<{ id: string; status: string }>(
+      `MATCH (d:Drop {id: $id})
+       SET d.status = 'CANCELLED', d.cancelledAt = datetime(), d.updatedAt = datetime()
+       RETURN d.id AS id, d.status AS status`,
+      { id: req.params["id"] },
+    );
+    return res.json(rows[0]);
+  } catch (err) {
+    logger.error({ err, dropId: req.params["id"] }, "PATCH /api/drops/:id/cancel failed");
+    return res.status(500).json({ error: "Failed to cancel drop" });
   }
 });
 

@@ -1,7 +1,14 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { parseSessionToken, requireVerifiedChef } from "./lib/auth";
-import { DEFAULT_WALLET_FREEZE_THRESHOLD } from "./config";
+import { DEFAULT_WALLET_FREEZE_THRESHOLD, DEFAULT_BOOST_PRICE, DEFAULT_BOOST_DURATION_HOURS } from "./config";
+
+/** A boost only counts while it hasn't lapsed — admin-curated features
+ *  (CurationPanel toggle, no featuredUntil) never expire on their own. */
+function isFeaturedNow(d: { isFeatured?: boolean; featuredUntil?: number }, now: number): boolean {
+  if (!d.isFeatured) return false;
+  return d.featuredUntil === undefined || d.featuredUntil > now;
+}
 
 /** Is it currently Friday in Trinidad & Tobago (UTC-4, no DST)? */
 function isFridayInTrinidad(): boolean {
@@ -49,6 +56,7 @@ export const list = query({
     const fridayOk = isFridayInTrinidad();
     drops = drops.filter((d) => !d.isSecret || fridayOk);
 
+    const now = Date.now();
     const withChef = await Promise.all(
       drops.map(async (d) => {
         const chef = await ctx.db.get(d.chefId);
@@ -60,24 +68,83 @@ export const list = query({
           ...d,
           chefName: chef?.name ?? null,
           chefHandle: chef?.handle ?? null,
+          chefIsVerified: chef?.isVerified ?? false,
           remaining: Math.max(0, d.inventory - d.currentOrders),
           distanceKm: distanceKm_,
+          isFeatured: isFeaturedNow(d, now),
         };
       }),
     );
 
     const byRecency = (a: typeof withChef[number], b: typeof withChef[number]) => b._creationTime - a._creationTime;
+    const byFeaturedThen = (cmp: typeof byRecency) => (a: typeof withChef[number], b: typeof withChef[number]) =>
+      Number(b.isFeatured) - Number(a.isFeatured) || cmp(a, b);
 
     if (lat === undefined || lng === undefined) {
-      return withChef.sort(byRecency);
+      return withChef.sort(byFeaturedThen(byRecency));
     }
 
-    return withChef.sort((a, b) => {
-      if (a.distanceKm === null && b.distanceKm === null) return byRecency(a, b);
-      if (a.distanceKm === null) return 1;
-      if (b.distanceKm === null) return -1;
-      return a.distanceKm - b.distanceKm;
+    return withChef.sort(
+      byFeaturedThen((a, b) => {
+        if (a.distanceKm === null && b.distanceKm === null) return byRecency(a, b);
+        if (a.distanceKm === null) return 1;
+        if (b.distanceKm === null) return -1;
+        return a.distanceKm - b.distanceKm;
+      }),
+    );
+  },
+});
+
+/** Chef self-serve paid placement — debits the chef's own wallet (no
+ *  gateway hop needed, it's an internal ledger move) and pins the drop to
+ *  the top of the feed for a fixed window. Distinct from admin's free
+ *  CurationPanel toggle, which never expires. */
+export const boost = mutation({
+  args: { sessionToken: v.string(), dropId: v.id("drops") },
+  handler: async (ctx, { sessionToken, dropId }) => {
+    const session = await parseSessionToken(sessionToken);
+    if (!session) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Not authenticated" });
+
+    const drop = await ctx.db.get(dropId);
+    if (!drop) throw new ConvexError({ code: "NOT_FOUND", message: "Drop not found" });
+
+    if (session.role !== "ADMIN") {
+      const user = await ctx.db.get(session.userId);
+      if (user?.chefId !== drop.chefId) {
+        throw new ConvexError({ code: "FORBIDDEN", message: "You can only boost your own drops" });
+      }
+    }
+    if (drop.status !== "ACTIVE") {
+      throw new ConvexError({ code: "INVALID_STATE", message: "Only active drops can be boosted" });
+    }
+    const now = Date.now();
+    if (isFeaturedNow(drop, now)) {
+      throw new ConvexError({ code: "CONFLICT", message: "This drop is already featured" });
+    }
+
+    const cfg = await ctx.db.query("config").withIndex("by_key", (q) => q.eq("key", "platform")).unique();
+    const boostPrice = cfg?.boostPrice ?? DEFAULT_BOOST_PRICE;
+
+    const chef = await ctx.db.get(drop.chefId);
+    if (!chef) throw new ConvexError({ code: "NOT_FOUND", message: "Chef not found" });
+    if (chef.walletBalance < boostPrice) {
+      throw new ConvexError({
+        code: "INSUFFICIENT_FUNDS",
+        message: `Boosting costs ${boostPrice.toFixed(2)} TTD — your wallet balance is ${chef.walletBalance.toFixed(2)} TTD.`,
+      });
+    }
+
+    const featuredUntil = now + DEFAULT_BOOST_DURATION_HOURS * 3_600_000;
+    await ctx.db.patch(dropId, { isFeatured: true, featuredUntil });
+    const newBalance = chef.walletBalance - boostPrice;
+    await ctx.db.patch(chef._id, { walletBalance: newBalance });
+    await ctx.db.insert("adminCredits", {
+      chefId: chef._id,
+      amount: -boostPrice,
+      note: `Self-serve boost: "${drop.title}"`,
     });
+
+    return { id: dropId, isFeatured: true, featuredUntil, chefWalletBalance: newBalance, boostPrice };
   },
 });
 
@@ -203,5 +270,71 @@ export const get = query({
     if (!drop) return null;
     const chef = await ctx.db.get(drop.chefId);
     return { ...drop, chefName: chef?.name ?? null, remaining: Math.max(0, drop.inventory - drop.currentOrders) };
+  },
+});
+
+/** Update the buyer-visible fields of a live drop.
+ *
+ * Ownership and inventory invariants are enforced here rather than in the
+ * mobile form. Existing orders can never be invalidated by lowering the
+ * plate limit, and a cancelled/expired drop cannot be silently re-opened.
+ */
+export const update = mutation({
+  args: {
+    sessionToken: v.string(),
+    dropId: v.id("drops"),
+    title: v.string(),
+    description: v.string(),
+    price: v.number(),
+    inventory: v.number(),
+    minOrders: v.number(),
+    pickupLocation: v.string(),
+    expiresAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const session = await parseSessionToken(args.sessionToken);
+    if (!session) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Not authenticated" });
+    await requireVerifiedChef(ctx, session);
+
+    const drop = await ctx.db.get(args.dropId);
+    if (!drop) throw new ConvexError({ code: "NOT_FOUND", message: "Drop not found" });
+    if (drop.status === "CANCELLED" || drop.status === "EXPIRED") {
+      throw new ConvexError({ code: "INVALID_STATE", message: "Only a live drop can be edited" });
+    }
+    if (args.title.trim().length < 2 || args.description.trim().length < 2 || args.pickupLocation.trim().length < 2) {
+      throw new ConvexError({ code: "INVALID_INPUT", message: "Title, description, and pickup location are required" });
+    }
+    if (!Number.isFinite(args.price) || args.price <= 0) {
+      throw new ConvexError({ code: "INVALID_INPUT", message: "Price must be greater than zero" });
+    }
+    if (!Number.isInteger(args.inventory) || args.inventory < drop.currentOrders) {
+      throw new ConvexError({ code: "INVALID_INPUT", message: "Plate limit cannot be below existing orders" });
+    }
+    if (!Number.isInteger(args.minOrders) || args.minOrders < 1 || args.minOrders > args.inventory) {
+      throw new ConvexError({ code: "INVALID_INPUT", message: "Minimum orders must be between 1 and the plate limit" });
+    }
+    if (!Number.isFinite(args.expiresAt) || args.expiresAt <= Date.now()) {
+      throw new ConvexError({ code: "INVALID_INPUT", message: "Expiry must be in the future" });
+    }
+
+    if (session.role !== "ADMIN") {
+      const user = await ctx.db.get(session.userId);
+      if (!user?.chefId || user.chefId !== drop.chefId) {
+        throw new ConvexError({ code: "FORBIDDEN", message: "You can only edit your own drops" });
+      }
+    }
+
+    await ctx.db.patch(drop._id, {
+      title: args.title.trim(),
+      description: args.description.trim(),
+      price: Math.round(args.price * 100) / 100,
+      inventory: args.inventory,
+      minOrders: args.minOrders,
+      pickupLocation: args.pickupLocation.trim(),
+      expiresAt: args.expiresAt,
+      status: drop.currentOrders >= args.inventory ? "SOLD_OUT" : "ACTIVE",
+    });
+
+    return ctx.db.get(drop._id);
   },
 });

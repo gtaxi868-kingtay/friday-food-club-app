@@ -23,7 +23,9 @@ export default function OrdersScreen() {
 
   const activeOrders = orders.filter(o => o.status !== 'cancelled');
   const cancelledOrders = orders.filter(o => o.status === 'cancelled');
-  const lockedFunds = activeOrders.reduce((sum, o) => sum + o.price, 0);
+  const lockedFunds = activeOrders
+    .filter((o) => o.escrowStatus === 'HELD')
+    .reduce((sum, o) => sum + (o.effectivePrice ?? o.price), 0);
   const confirmedOrders = activeOrders.filter(o => o.currentOrders >= o.minOrders);
 
   return (

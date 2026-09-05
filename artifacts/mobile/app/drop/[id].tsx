@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -144,6 +145,10 @@ export default function DropDetailScreen() {
   const viewers = viewerCount(effectiveDrop!.id);
   const HERO_H = Math.round(width * 1.05);
   const slotColor = MEAL_SLOT_COLORS[effectiveDrop!.mealSlot] ?? colors.gold;
+  const hasMemberDiscount =
+    hasClubPass &&
+    effectiveDrop!.originalPrice != null &&
+    effectiveDrop!.originalPrice !== effectiveDrop!.price;
 
   const handlePreOrder = async () => {
     if (hasOrdered || isSoldOut || isOrdering) return;
@@ -168,13 +173,16 @@ export default function DropDetailScreen() {
     setIsOrdering(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     try {
-      await preOrder(effectiveDrop!, paymentMethod);
+      const checkout = await preOrder(effectiveDrop!, paymentMethod);
+      if (checkout.checkoutUrl) {
+        await WebBrowser.openBrowserAsync(checkout.checkoutUrl);
+      }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
-        paymentMethod === 'CASH' ? 'Reservation Confirmed' : 'Pre-order Confirmed',
+        paymentMethod === 'CASH' ? 'Reservation Confirmed' : 'Payment Started',
         paymentMethod === 'CASH'
           ? 'Your plate is reserved. Pay cash when you collect it.'
-          : 'Your order is secured in escrow. Bring your QR code to pickup.',
+          : 'Finish payment in the secure WiPay window. Your order moves into escrow only after WiPay confirms it.',
         [{ text: 'Done' }],
       );
     } catch (error: any) {
@@ -182,6 +190,8 @@ export default function DropDetailScreen() {
       const message = error instanceof Error ? error.message : 'We could not place your order. Please try again.';
       const cleanMessage = message.includes('NOT_FRIDAY')
         ? 'Secret drops are exclusively available on Fridays. Come back then — this one will be waiting for you.'
+        : message.includes('DIGITAL_REQUIRES_ACCOUNT')
+        ? 'Sign in before paying online. Cash reservations are available without an account.'
         : message.replace(/^API .*? → \d+: /, '') || 'We could not place your order. Please try again.';
       Alert.alert('Order Not Placed', cleanMessage, [{ text: 'Try Again', style: 'default' }]);
     } finally {
@@ -199,6 +209,11 @@ export default function DropDetailScreen() {
     } else {
       await Share.share({ message: text });
     }
+  };
+
+  const handleChefPress = async () => {
+    await Haptics.selectionAsync();
+    router.push(`/chef/${effectiveDrop!.chef.id}` as any);
   };
 
   return (
@@ -265,7 +280,12 @@ export default function DropDetailScreen() {
         >
           {/* Chef + viewers */}
           <View style={styles.chefRow}>
-            <View style={styles.chefLeft}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View ${effectiveDrop!.chef.name}'s profile`}
+              onPress={handleChefPress}
+              style={({ pressed }) => [styles.chefLeft, { opacity: pressed ? 0.72 : 1 }]}
+            >
               <LinearGradient
                 colors={['#D4AF37', '#9E8028']}
                 style={styles.chefDot}
@@ -281,7 +301,7 @@ export default function DropDetailScreen() {
                   {effectiveDrop!.cuisine}
                 </Text>
               </GlassView>
-            </View>
+            </Pressable>
             <GlassView style={styles.viewerPill}>
               <View style={styles.viewerDot} />
               <Text style={styles.viewerText}>{viewers} watching</Text>
@@ -316,7 +336,14 @@ export default function DropDetailScreen() {
 
           {/* Price + Countdown */}
           <View style={styles.metaRow}>
-            <Text style={[styles.price, { color: colors.gold }]}>${effectiveDrop!.price}</Text>
+            <View style={styles.priceGroup}>
+              {hasMemberDiscount && (
+                <Text style={[styles.originalPrice, { color: colors.mutedForeground }]}>
+                  ${effectiveDrop!.originalPrice!.toFixed(2)}
+                </Text>
+              )}
+              <Text style={[styles.price, { color: colors.gold }]}>${effectiveDrop!.price}</Text>
+            </View>
             <GlassView
               style={[
                 styles.countdownPill,
@@ -447,7 +474,12 @@ export default function DropDetailScreen() {
 
           {/* Chef stats */}
           <GlassView intensity={35} style={styles.chefCard}>
-            <View style={styles.chefCardHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View ${effectiveDrop!.chef.name}'s profile`}
+              onPress={handleChefPress}
+              style={({ pressed }) => [styles.chefCardHeader, { opacity: pressed ? 0.72 : 1 }]}
+            >
               <LinearGradient
                 colors={['#D4AF37', '#9E8028']}
                 style={styles.chefAvatar}
@@ -470,7 +502,7 @@ export default function DropDetailScreen() {
                   <Text style={[styles.verifiedText, { color: colors.gold }]}>Verified</Text>
                 </GlassView>
               )}
-            </View>
+            </Pressable>
             <View style={styles.chefStats}>
               {[
                 { label: 'Rating', value: effectiveDrop!.chef.rating.toFixed(1) },
@@ -753,6 +785,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  priceGroup: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  originalPrice: {
+    fontSize: 18,
+    fontFamily: 'Inter_500Medium',
+    textDecorationLine: 'line-through',
   },
   price: {
     fontSize: 36,

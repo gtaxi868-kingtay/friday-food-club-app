@@ -1,0 +1,21 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "5QcSoeW0e_QMocwVIFOrq"
+uri = "file://artifacts/mobile/assets/images/logo-white-transparent.png"
+type = "image"
+title = "White logo — transparent"
+
+[[outputs]]
+id = "MyntZ7I4xZUCKbhjMz17q"
+uri = "file://artifacts/mobile/assets/images/logo-gold-transparent.png"
+type = "image"
+title = "Gold logo — transparent"
+
+[[outputs]]
+id = "t576krJCY1iO7Fuhn8HA1"
+uri = "file://downloads/friday-food-club-codex-source.zip"
+type = "unspecified"
+title = "Friday Food Club — Codex Source Handover"
+description = "Complete project source archive including mobile app, API server, portal, assets, configuration, lockfiles, and HANDOVER.md. Rebuildable dependencies, caches, and private runtime secrets are excluded."

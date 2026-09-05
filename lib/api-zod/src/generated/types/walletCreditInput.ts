@@ -14,6 +14,6 @@ export interface WalletCreditInput {
   amount: number;
   /** Optional admin note recorded on the chef node */
   note?: string;
-  /** Client-generated UUID; a second request with the same key within 60 s returns the first response without creating a duplicate credit */
+  /** Client-generated request key; a second request with the same key within 60 s returns the first response without creating a duplicate credit */
   idempotencyKey?: string;
 }

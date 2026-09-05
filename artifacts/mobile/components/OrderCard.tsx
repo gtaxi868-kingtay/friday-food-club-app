@@ -91,8 +91,28 @@ export default function OrderCard({ order, onCancel }: Props) {
         </View>
       )}
 
-      {/* Pickup pass — QR shown to the chef at pickup to release escrow / confirm cash */}
-      {!isCancelled && order.pickupToken && (
+      {/* Do not expose the pickup QR until payment is verified. */}
+      {!isCancelled && (order.escrowStatus === 'PENDING_PAYMENT' || order.escrowStatus === 'PAYMENT_FAILED') && (
+        <View style={[styles.paymentState, {
+          borderColor: order.escrowStatus === 'PAYMENT_FAILED'
+            ? 'rgba(196,30,58,0.35)'
+            : 'rgba(212,175,55,0.2)',
+        }]}>
+          <Ionicons
+            name={order.escrowStatus === 'PAYMENT_FAILED' ? 'alert-circle-outline' : 'time-outline'}
+            size={17}
+            color={order.escrowStatus === 'PAYMENT_FAILED' ? '#FF6B6B' : colors.gold}
+          />
+          <Text style={[styles.paymentStateText, { color: colors.mutedForeground }]}>
+            {order.escrowStatus === 'PAYMENT_FAILED'
+              ? 'Payment was not confirmed. Cancel this order before trying again.'
+              : 'Payment is still being confirmed. Pickup access appears here after WiPay verification.'}
+          </Text>
+        </View>
+      )}
+      {!isCancelled && order.pickupToken &&
+        order.escrowStatus !== 'PENDING_PAYMENT' &&
+        order.escrowStatus !== 'PAYMENT_FAILED' && (
         <View style={[styles.pickupSection, { borderColor: 'rgba(212,175,55,0.2)' }]}>
           {/* Cash payment badge */}
           {order.paymentMethod === 'CASH' && (
@@ -201,6 +221,11 @@ const styles = StyleSheet.create({
   },
   cashBadgeText: { fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1.5 },
   pickupSection: { borderTopWidth: 1, paddingTop: 12, gap: 10 },
+  paymentState: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    padding: 13, borderWidth: 1, borderRadius: 13, marginTop: 12,
+  },
+  paymentStateText: { flex: 1, fontSize: 12, lineHeight: 18, fontFamily: 'Inter_400Regular' },
   pickupHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   pickupLabel: { fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1.5 },
   qrWrap: { alignItems: 'center', gap: 8, paddingVertical: 6 },

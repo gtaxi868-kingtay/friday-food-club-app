@@ -24,35 +24,60 @@ export interface PlatformConfig {
   walletFreezeThreshold: number;
 }
 
+const CONFIG_CACHE_TTL_MS = 30_000;
+let cachedConfig: { value: PlatformConfig; expiresAt: number } | null = null;
+let configRequest: Promise<PlatformConfig> | null = null;
+
+export function clearPlatformConfigCache() {
+  cachedConfig = null;
+}
+
+const defaults = (): PlatformConfig => ({
+  platformFeeRate: DEFAULT_PLATFORM_FEE_RATE,
+  memberDiscountRate: DEFAULT_MEMBER_DISCOUNT,
+  markupRate: 0,
+  walletFreezeThreshold: DEFAULT_WALLET_FREEZE_THRESHOLD,
+});
+
 export async function getPlatformConfig(): Promise<PlatformConfig> {
-  const rows = await runRead<{
-    platformFeeRate: unknown;
-    memberDiscountRate: unknown;
-    markupRate: unknown;
-    walletFreezeThreshold: unknown;
-  }>(
-    `MATCH (cfg:Config {id: 'platform'})
-     RETURN cfg.platformFeeRate AS platformFeeRate,
-            cfg.memberDiscountRate AS memberDiscountRate,
-            cfg.markupRate AS markupRate,
-            cfg.walletFreezeThreshold AS walletFreezeThreshold`
-  );
-  if (rows.length === 0) {
-    return {
-      platformFeeRate: DEFAULT_PLATFORM_FEE_RATE,
-      memberDiscountRate: DEFAULT_MEMBER_DISCOUNT,
-      markupRate: 0,
-      walletFreezeThreshold: DEFAULT_WALLET_FREEZE_THRESHOLD,
-    };
-  }
-  const r = rows[0]!;
-  return {
-    platformFeeRate: toNumber(r.platformFeeRate) || DEFAULT_PLATFORM_FEE_RATE,
-    memberDiscountRate: toNumber(r.memberDiscountRate) || DEFAULT_MEMBER_DISCOUNT,
-    markupRate: toNumber(r.markupRate) || 0,
-    walletFreezeThreshold: r.walletFreezeThreshold !== null && r.walletFreezeThreshold !== undefined
-      ? toNumber(r.walletFreezeThreshold)
-      : DEFAULT_WALLET_FREEZE_THRESHOLD,
-  };
+  const now = Date.now();
+  if (cachedConfig && cachedConfig.expiresAt > now) return cachedConfig.value;
+  if (configRequest) return configRequest;
+
+  configRequest = (async () => {
+    try {
+      const rows = await runRead<{
+        platformFeeRate: unknown;
+        memberDiscountRate: unknown;
+        markupRate: unknown;
+        walletFreezeThreshold: unknown;
+      }>(
+        `OPTIONAL MATCH (cfg:Config {id: 'platform'})
+         RETURN cfg.platformFeeRate AS platformFeeRate,
+                cfg.memberDiscountRate AS memberDiscountRate,
+                cfg.markupRate AS markupRate,
+                cfg.walletFreezeThreshold AS walletFreezeThreshold`
+      );
+      const r = rows[0] ?? {};
+      const value: PlatformConfig = {
+        // Zero is a valid configured value; don't turn it back into a default with ||.
+        platformFeeRate: r.platformFeeRate == null ? DEFAULT_PLATFORM_FEE_RATE : toNumber(r.platformFeeRate),
+        memberDiscountRate: r.memberDiscountRate == null ? DEFAULT_MEMBER_DISCOUNT : toNumber(r.memberDiscountRate),
+        markupRate: r.markupRate == null ? 0 : toNumber(r.markupRate),
+        walletFreezeThreshold: r.walletFreezeThreshold == null
+          ? DEFAULT_WALLET_FREEZE_THRESHOLD
+          : toNumber(r.walletFreezeThreshold),
+      };
+      cachedConfig = { value, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+      return value;
+    } catch {
+      // A cold or unavailable database must not block safe default behavior.
+      return defaults();
+    } finally {
+      configRequest = null;
+    }
+  })();
+
+  return configRequest;
 }
 

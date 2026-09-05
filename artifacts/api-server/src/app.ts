@@ -6,6 +6,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { initSchema } from "./lib/schema";
 import { closeDriver, getDriver } from "./lib/neo4j";
+import healthRouter from "./routes/health";
 
 const app: Express = express();
 
@@ -31,9 +32,6 @@ for (const d of (process.env["REPLIT_DOMAINS"] ?? "").split(",")) {
 }
 if (process.env["REPLIT_DEV_DOMAIN"]) allowedOrigins.add(`https://${process.env["REPLIT_DEV_DOMAIN"]}`);
 if (process.env["REPLIT_EXPO_DEV_DOMAIN"]) allowedOrigins.add(`https://${process.env["REPLIT_EXPO_DEV_DOMAIN"]}`);
-for (const d of (process.env["DEV_ORIGINS"] ?? "").split(",")) {
-  if (d.trim()) allowedOrigins.add(d.trim());
-}
 
 app.use(cors({
   origin(origin, cb) {
@@ -47,7 +45,8 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api", router);
+const convexIsAuthoritative = process.env["CONVEX_PRODUCTION_MODE"] === "true";
+app.use("/api", convexIsAuthoritative ? healthRouter : router);
 
 // ── Neo4j bootstrap ───────────────────────────────────────────────────────
 // Only initialise if credentials are present — server still starts without
@@ -55,13 +54,15 @@ app.use("/api", router);
 const NEO4J_URI = process.env["NEO4J_URI"];
 const NEO4J_PASSWORD = process.env["NEO4J_PASSWORD"];
 
-if (NEO4J_URI && NEO4J_PASSWORD) {
+if (!convexIsAuthoritative && NEO4J_URI && NEO4J_PASSWORD) {
   // Warm up the driver and run schema migration in the background.
   // The server is already listening by the time this resolves.
   getDriver(); // establishes pool early
   initSchema().catch((err) => {
     logger.error({ err }, "Neo4j schema init failed — routes will return 503 until resolved");
   });
+} else if (convexIsAuthoritative) {
+  logger.info("Convex is authoritative — legacy Neo4j API routes are disabled.");
 } else {
   logger.warn(
     "NEO4J_URI / NEO4J_PASSWORD not set — database routes disabled. " +

@@ -1019,7 +1019,7 @@ components:
       properties:
         amount:         { type: number, minimum: 0.01, description: "TTD amount to credit (must be positive)" }
         note:           { type: string, description: "Optional admin note recorded on the chef node" }
-        idempotencyKey: { type: string, format: uuid, description: "Client-generated UUID; a second request with the same key within 60 s returns the first response without creating a duplicate credit" }
+        idempotencyKey: { type: string, description: "Client-generated request key; a second request with the same key within 60 s returns the first response without creating a duplicate credit" }
 
     WalletCreditResult:
       type: object

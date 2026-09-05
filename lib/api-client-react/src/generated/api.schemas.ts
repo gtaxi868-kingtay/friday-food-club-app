@@ -464,7 +464,7 @@ export interface WalletCreditInput {
   amount: number;
   /** Optional admin note recorded on the chef node */
   note?: string;
-  /** Client-generated UUID; a second request with the same key within 60 s returns the first response without creating a duplicate credit */
+  /** Client-generated request key; a second request with the same key within 60 s returns the first response without creating a duplicate credit */
   idempotencyKey?: string;
 }
 
@@ -806,6 +806,24 @@ export interface WalletTransaction {
   walletEffect?: number;
   /** @nullable */
   fulfilledAt?: string | null;
+}
+
+/**
+ * Wallet view for the authenticated chef — includes full admin-credit history
+ */
+export interface ChefOwnWallet {
+  chefId?: string;
+  walletBalance?: number;
+  /** Wallet balance below which drop creation is blocked */
+  freezeThreshold?: number;
+  /** True when walletBalance < freezeThreshold */
+  isFrozen?: boolean;
+  /** Absolute value of negative balance (0 if balance is positive) */
+  cashDebt?: number;
+  /** All-time sum of net chefShare for completed drops */
+  totalEarnings?: number;
+  /** All admin wallet credits applied to this chef, newest first */
+  creditHistory?: AdminCreditEntry[];
 }
 
 export interface ChefWallet {

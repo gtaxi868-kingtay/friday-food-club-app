@@ -1,9 +1,13 @@
 import React, { useEffect } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { KeyboardProviderCompat } from '@/components/KeyboardProviderCompat';
+import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { reportRuntimeError } from '@/lib/runtimeDiagnostics';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -16,17 +20,49 @@ import {
   PlayfairDisplay_700Bold,
 } from '@expo-google-fonts/playfair-display';
 import { Stack, router } from 'expo-router';
+import { reloadAppAsync } from 'expo';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import { AppProvider } from '@/contexts/AppContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 
-const convex = new ConvexReactClient(process.env['EXPO_PUBLIC_CONVEX_URL']!, {
-  unsavedChangesWarning: false,
-});
+type ConvexClientState = {
+  client: ConvexReactClient | null;
+  error: string | null;
+};
 
-SplashScreen.preventAutoHideAsync();
+function createConvexClient(): ConvexClientState {
+  const url = process.env['EXPO_PUBLIC_CONVEX_URL']?.trim();
+
+  if (!url) {
+    const error = new Error('EXPO_PUBLIC_CONVEX_URL is not configured');
+    reportRuntimeError('convex-config', error, { reason: 'missing_url' });
+    return {
+      client: null,
+      error: 'The live service is not configured. Add EXPO_PUBLIC_CONVEX_URL and restart the mobile preview.',
+    };
+  }
+
+  try {
+    return {
+      client: new ConvexReactClient(url, { unsavedChangesWarning: false }),
+      error: null,
+    };
+  } catch (error) {
+    reportRuntimeError('convex-config', error, { reason: 'invalid_url' });
+    return {
+      client: null,
+      error: 'The live service URL is invalid. Check EXPO_PUBLIC_CONVEX_URL and restart the mobile preview.',
+    };
+  }
+}
+
+const convexState = createConvexClient();
+
+SplashScreen.preventAutoHideAsync().catch(error => {
+  reportRuntimeError('splash-screen', error);
+});
 
 // Show notifications as banners even when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -103,6 +139,63 @@ function RootLayoutNav() {
   );
 }
 
+function StartupNotice() {
+  const { startupError, retryStartup } = useApp();
+  const { authError, retryAuthRestore } = useAuth();
+  const message = startupError ?? authError;
+
+  if (!message) return null;
+
+  return (
+    <View pointerEvents="box-none" style={styles.noticeLayer}>
+      <View style={styles.notice}>
+        <View style={styles.noticeCopy}>
+          <Text style={styles.noticeTitle}>Some setup needs attention</Text>
+          <Text style={styles.noticeText}>{message}</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry app setup"
+          onPress={() => {
+            if (startupError) retryStartup();
+            if (authError) retryAuthRestore();
+          }}
+          style={styles.noticeButton}
+        >
+          <Text style={styles.noticeButtonText}>Retry</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StartupErrorScreen({ message }: { message: string }) {
+  const restart = async () => {
+    reportRuntimeError('startup-blocked', new Error(message));
+    try {
+      await reloadAppAsync();
+    } catch (error) {
+      reportRuntimeError('startup-reload', error);
+    }
+  };
+
+  return (
+    <View style={styles.startupScreen}>
+      <Text style={styles.startupBrand}>FRIDAY FOOD CLUB</Text>
+      <Text style={styles.startupTitle}>Connection setup needed</Text>
+      <Text style={styles.startupMessage}>{message}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Reload after checking connection setup"
+        onPress={restart}
+        style={styles.startupButton}
+      >
+        <Text style={styles.startupButtonText}>Reload after fixing setup</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
@@ -121,19 +214,30 @@ export default function RootLayout() {
 
   if (!fontsLoaded && !fontError) return null;
 
+  if (!convexState.client) {
+    return (
+      <SafeAreaProvider>
+        <StartupErrorScreen message={convexState.error ?? 'Live service configuration is unavailable.'} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <ConvexProvider client={convex}>
+        <ConvexProvider client={convexState.client}>
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView style={{ flex: 1 }}>
-              <KeyboardProvider>
+              <KeyboardProviderCompat>
                 <AuthProvider>
                   <AppProvider>
-                    <RootLayoutNav />
+                    <View style={styles.appRoot}>
+                      <RootLayoutNav />
+                      <StartupNotice />
+                    </View>
                   </AppProvider>
                 </AuthProvider>
-              </KeyboardProvider>
+              </KeyboardProviderCompat>
             </GestureHandlerRootView>
           </QueryClientProvider>
         </ConvexProvider>
@@ -141,3 +245,51 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  appRoot: { flex: 1 },
+  noticeLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  notice: {
+    width: '100%',
+    maxWidth: 560,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#3A1E24',
+    borderWidth: 1,
+    borderColor: '#C41E3A',
+  },
+  noticeCopy: { flex: 1, gap: 2 },
+  noticeTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  noticeText: { color: '#F6DDE1', fontSize: 12, lineHeight: 17 },
+  noticeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 9,
+    backgroundColor: '#D4AF37',
+  },
+  noticeButtonText: { color: '#0A0A0A', fontSize: 12, fontWeight: '700' },
+  startupScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: '#0A0A0A',
+    gap: 16,
+  },
+  startupBrand: { color: '#D4AF37', fontSize: 12, fontWeight: '700', letterSpacing: 2 },
+  startupTitle: { color: '#FFFFFF', fontSize: 26, fontWeight: '700', textAlign: 'center' },
+  startupMessage: { color: '#B8B1A8', fontSize: 16, lineHeight: 24, textAlign: 'center', maxWidth: 520 },
+  startupButton: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 10, backgroundColor: '#D4AF37' },
+  startupButtonText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' },
+});

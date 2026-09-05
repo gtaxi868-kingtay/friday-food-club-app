@@ -2,6 +2,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { parseSessionToken, hashPassword } from "./lib/auth";
+import { DEFAULT_NO_SHOW_PENALTY } from "./config";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
 
 async function requireAdmin(ctx: QueryCtx | MutationCtx, sessionToken: string) {
@@ -39,6 +40,23 @@ export const stats = query({
     const now = Date.now();
     const activeSubs = subs.filter((s) => s.status === "ACTIVE" && s.expiresAt > now);
 
+    // Repeat-buyer rate — the real signal on whether this is a durable
+    // business or a one-time novelty, vs. the raw revenue totals above.
+    const ordersPerBuyer = new Map<string, number>();
+    for (const o of orders) ordersPerBuyer.set(o.userId, (ordersPerBuyer.get(o.userId) ?? 0) + 1);
+    const totalBuyers = ordersPerBuyer.size;
+    const repeatBuyers = [...ordersPerBuyer.values()].filter((n) => n > 1).length;
+    const repeatBuyerRate = totalBuyers > 0 ? repeatBuyers / totalBuyers : 0;
+
+    // No-show risk — orders still paid-and-held after their drop expired,
+    // meaning nobody scanned a pickup. Flags chefs whose drops routinely
+    // never get fulfilled, independent of whether they sold out.
+    const unfulfilledExpired = orders.filter((o) => {
+      if (o.status !== "PENDING" || !["HELD", "CASH"].includes(o.escrowStatus)) return false;
+      const drop = drops.find((d) => d._id === o.dropId);
+      return !!drop && drop.expiresAt < now;
+    });
+
     const chefEarningsById = new Map<string, number>();
     for (const o of orders) chefEarningsById.set(o.chefId, (chefEarningsById.get(o.chefId) ?? 0) + (o.chefShare ?? 0));
     const topChefs = [...chefs]
@@ -72,6 +90,9 @@ export const stats = query({
           active: activeSubs.length,
           monthlyRevenue: activeSubs.length * 5,
         },
+        repeatBuyerRate,
+        totalBuyers,
+        unfulfilledExpiredOrders: unfulfilledExpired.length,
       },
       byMealSlot: [...byMealSlotMap.entries()].map(([mealSlot, v]) => ({ mealSlot, ...v })),
       topChefs,
@@ -112,6 +133,7 @@ export const listChefs = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, { sessionToken }) => {
     await requireAdmin(ctx, sessionToken);
+    const now = Date.now();
     const chefs = await ctx.db.query("chefs").collect();
     const withDetail = await Promise.all(
       chefs.map(async (c) => {
@@ -119,10 +141,20 @@ export const listChefs = query({
         const credits = (await ctx.db.query("adminCredits").withIndex("by_chefId", (q) => q.eq("chefId", c._id)).collect()).sort(
           (a, b) => b._creationTime - a._creationTime,
         );
+        const orders = await ctx.db.query("orders").withIndex("by_chefId", (q) => q.eq("chefId", c._id)).collect();
+        const unfulfilledExpiredOrders = orders.filter((o) => {
+          if (o.status !== "PENDING" || !["HELD", "CASH"].includes(o.escrowStatus)) return false;
+          const drop = drops.find((d) => d._id === o.dropId);
+          return !!drop && drop.expiresAt < now;
+        }).length;
+        const cancelledDrops = drops.filter((d) => d.status === "CANCELLED").length;
         return {
           ...c,
           totalDrops: drops.length,
           successfulDrops: drops.filter((d) => d.status === "SOLD_OUT").length,
+          cancelledDrops,
+          cancellationRate: drops.length > 0 ? cancelledDrops / drops.length : 0,
+          unfulfilledExpiredOrders,
           creditHistory: credits.map((cr) => ({ amount: cr.amount, note: cr.note, createdAt: cr._creationTime })),
         };
       }),
@@ -269,6 +301,128 @@ export const addChef = mutation({
       chefId,
     });
     return { success: true, userId, chefId, email: normalizedEmail, handle, tempPassword };
+  },
+});
+
+/** Expired drops still holding paid orders nobody ever picked up —
+ *  the no-show risk queue. */
+export const noShowDrops = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    await requireAdmin(ctx, sessionToken);
+    const now = Date.now();
+    const expiredDrops = (await ctx.db.query("drops").collect()).filter((d) => d.expiresAt < now && d.status !== "CANCELLED");
+
+    const rows = await Promise.all(
+      expiredDrops.map(async (d) => {
+        const allOrders = await ctx.db.query("orders").withIndex("by_dropId", (q) => q.eq("dropId", d._id)).collect();
+        const unfulfilled = allOrders.filter((o) => o.status === "PENDING" && ["HELD", "CASH"].includes(o.escrowStatus));
+        if (unfulfilled.length === 0) return null;
+        // Proof the chef actually showed up: at least one order on this same
+        // drop got scanned and fulfilled. If so, the remaining no-shows are
+        // on the buyers who never came — not the chef.
+        const chefShowedUp = allOrders.some((o) => o.status === "FULFILLED");
+        const chef = await ctx.db.get(d.chefId);
+        return {
+          dropId: d._id,
+          dropTitle: d.title,
+          chefId: d.chefId,
+          chefName: chef?.name ?? null,
+          expiresAt: d.expiresAt,
+          unfulfilledOrders: unfulfilled.length,
+          amountHeld: unfulfilled.reduce((a, o) => a + o.effectivePrice, 0),
+          chefShowedUp,
+        };
+      }),
+    );
+    return rows.filter((r): r is NonNullable<typeof r> => r !== null).sort((a, b) => a.expiresAt - b.expiresAt);
+  },
+});
+
+/** Resolve a no-show on an expired drop. Two opposite cases, told apart by
+ *  whether ANY order on this drop was ever scanned/fulfilled:
+ *    - Chef never showed at all → nobody could redeem anything. Refund
+ *      every buyer and dock the chef's wallet.
+ *    - Chef showed up (proven by at least one fulfilled order) but some
+ *      buyers never came to collect → that's on the buyer, same as a
+ *      restaurant no-show. Digital prepaid orders release to the chef as
+ *      normal (they did the work); cash orders just close out — nothing
+ *      was collected up front, so there's nothing to forfeit or refund. */
+export const resolveNoShow = mutation({
+  args: { sessionToken: v.string(), dropId: v.id("drops") },
+  handler: async (ctx, { sessionToken, dropId }) => {
+    await requireAdmin(ctx, sessionToken);
+    const drop = await ctx.db.get(dropId);
+    if (!drop) throw new ConvexError({ code: "NOT_FOUND", message: "Drop not found" });
+    if (drop.expiresAt >= Date.now()) {
+      throw new ConvexError({ code: "INVALID_STATE", message: "This drop hasn't expired yet" });
+    }
+
+    const allOrders = await ctx.db.query("orders").withIndex("by_dropId", (q) => q.eq("dropId", dropId)).collect();
+    const unfulfilled = allOrders.filter((o) => o.status === "PENDING" && ["HELD", "CASH"].includes(o.escrowStatus));
+    if (unfulfilled.length === 0) {
+      return { dropId, mode: "none" as const, refundedOrders: 0, releasedOrders: 0, penalty: 0 };
+    }
+    const chefShowedUp = allOrders.some((o) => o.status === "FULFILLED");
+
+    if (drop.status !== "CANCELLED" && drop.status !== "EXPIRED") {
+      await ctx.db.patch(dropId, { status: "EXPIRED" });
+    }
+
+    if (!chefShowedUp) {
+      // Chef no-show: refund everyone, penalize the chef.
+      for (const o of unfulfilled) {
+        await ctx.db.patch(o._id, { status: "CANCELLED", escrowStatus: "REFUNDED" });
+      }
+      const cfg = await ctx.db.query("config").withIndex("by_key", (q) => q.eq("key", "platform")).unique();
+      const penaltyPerOrder = cfg?.noShowPenalty ?? DEFAULT_NO_SHOW_PENALTY;
+      const penalty = penaltyPerOrder * unfulfilled.length;
+
+      const chef = await ctx.db.get(drop.chefId);
+      if (chef) {
+        await ctx.db.patch(chef._id, { walletBalance: chef.walletBalance - penalty });
+        await ctx.db.insert("adminCredits", {
+          chefId: chef._id,
+          amount: -penalty,
+          note: `No-show penalty: "${drop.title}" (${unfulfilled.length} unfulfilled order${unfulfilled.length === 1 ? "" : "s"})`,
+        });
+      }
+      return { dropId, mode: "chef_no_show" as const, refundedOrders: unfulfilled.length, releasedOrders: 0, penalty };
+    }
+
+    // Buyer no-show(s): chef proved up. Digital prepaid orders forfeit to
+    // the chef (same payout math as a normal scan); cash orders just close,
+    // since nothing was ever collected.
+    const cfg = await ctx.db.query("config").withIndex("by_key", (q) => q.eq("key", "platform")).unique();
+    const feeRate = cfg?.platformFeeRate ?? 0.1;
+    const chef = await ctx.db.get(drop.chefId);
+    let releasedOrders = 0;
+    let walletBalance = chef?.walletBalance ?? 0;
+
+    for (const o of unfulfilled) {
+      if (o.paymentMethod === "DIGITAL" && o.escrowStatus === "HELD") {
+        const gross = o.effectivePrice;
+        const platformShare = Math.round(gross * feeRate * 100) / 100;
+        const chefShare = Math.round((gross - platformShare) * 100) / 100;
+        walletBalance += chefShare;
+        await ctx.db.patch(o._id, {
+          status: "CANCELLED",
+          escrowStatus: "RELEASED",
+          chefShare,
+          platformShare,
+          fulfilledAt: Date.now(),
+        });
+        releasedOrders += 1;
+      } else {
+        // CASH orders never collected anything up front — just close them.
+        await ctx.db.patch(o._id, { status: "CANCELLED", escrowStatus: "CANCELLED" });
+      }
+    }
+    if (chef && walletBalance !== chef.walletBalance) {
+      await ctx.db.patch(chef._id, { walletBalance });
+    }
+
+    return { dropId, mode: "buyer_no_show" as const, refundedOrders: 0, releasedOrders, penalty: 0 };
   },
 });
 
