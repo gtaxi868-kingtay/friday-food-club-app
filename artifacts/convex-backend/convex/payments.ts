@@ -118,6 +118,47 @@ export const startClubPassCheckout = action({
   },
 });
 
+/** Buyer wallet top-up — same hosted-checkout pattern as an order/Club Pass
+ *  payment, just credited straight to users.walletBalance on webhook PAID
+ *  instead of releasing an order's escrow. */
+export const startWalletTopUp = action({
+  args: { amount: v.number(), sessionToken: v.string() },
+  handler: async (ctx, args): Promise<{ paymentId: string; checkoutUrl: string }> => {
+    const prepared = await ctx.runMutation(internal.payments.prepareWalletTopUp, args);
+    const apiUrl = requireConfig(WIPAY_API_URL);
+    const merchantId = requireConfig(WIPAY_MERCHANT_ID);
+    const returnUrl = requireConfig(WIPAY_RETURN_URL);
+    const apiKey = requireConfig("WIPAY_API_KEY");
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        merchantId,
+        reference: prepared.reference,
+        amount: prepared.amount.toFixed(2),
+        currency: "TTD",
+        returnUrl,
+        webhookReference: prepared.paymentId,
+        description: "Friday Food Club wallet top-up",
+      }),
+    });
+    const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok) {
+      await ctx.runMutation(internal.payments.markFailed, { paymentId: prepared.paymentId, rawStatus: `HTTP_${response.status}` });
+      throw new ConvexError({ code: "PAYMENT_PROVIDER_ERROR", message: "WiPay could not create checkout" });
+    }
+    const checkoutUrl = safeReference(body?.checkoutUrl ?? body?.redirectUrl ?? body?.url);
+    const providerReference = safeReference(body?.transactionId ?? body?.reference ?? body?.id);
+    if (!checkoutUrl) {
+      await ctx.runMutation(internal.payments.markFailed, { paymentId: prepared.paymentId, rawStatus: "MISSING_CHECKOUT_URL" });
+      throw new ConvexError({ code: "PAYMENT_PROVIDER_ERROR", message: "WiPay response did not include a checkout URL" });
+    }
+    await ctx.runMutation(internal.payments.markPending, { paymentId: prepared.paymentId, checkoutUrl, providerReference });
+    return { paymentId: prepared.paymentId, checkoutUrl };
+  },
+});
+
 export const getForOrder = query({
   args: { orderId: v.id("orders"), sessionToken: v.string() },
   handler: async (ctx, { orderId, sessionToken }) => {
@@ -228,6 +269,31 @@ export const prepareClubPass = internalMutation({
   },
 });
 
+export const prepareWalletTopUp = internalMutation({
+  args: { amount: v.number(), sessionToken: v.string() },
+  handler: async (ctx, { amount, sessionToken }) => {
+    const session = await parseSessionToken(sessionToken);
+    if (!session) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Not authenticated" });
+    if (!Number.isFinite(amount) || amount < 10 || amount > 1000) {
+      throw new ConvexError({ code: "INVALID_AMOUNT", message: "Top-up amount must be between 10 and 1000 TTD" });
+    }
+    const now = Date.now();
+    const idempotencyKey = `wallet_topup_${session.userId}_${now}`;
+    const paymentId = await ctx.db.insert("paymentTransactions", {
+      kind: "WALLET_TOPUP",
+      userId: session.userId,
+      provider: "WIPAY",
+      amount,
+      currency: "TTD",
+      status: "INITIATED",
+      idempotencyKey,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { paymentId, reference: idempotencyKey, amount };
+  },
+});
+
 export const markPending = internalMutation({
   args: { paymentId: v.id("paymentTransactions"), checkoutUrl: v.string(), providerReference: v.optional(v.string()) },
   handler: async (ctx, { paymentId, checkoutUrl, providerReference }) => {
@@ -299,6 +365,12 @@ export const applyWebhook = internalMutation({
             startedAt: now,
             expiresAt: now + 30 * 24 * 3_600_000,
           });
+        }
+      }
+      if (payment.kind === "WALLET_TOPUP") {
+        const user = await ctx.db.get(payment.userId as any);
+        if (user && "walletBalance" in user) {
+          await ctx.db.patch(payment.userId as any, { walletBalance: user.walletBalance + payment.amount });
         }
       }
     } else if (failed) {

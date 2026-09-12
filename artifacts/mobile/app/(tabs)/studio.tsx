@@ -686,7 +686,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   walletCardBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -867,7 +867,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   actionCardBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 20,
     borderWidth: 1,
   },

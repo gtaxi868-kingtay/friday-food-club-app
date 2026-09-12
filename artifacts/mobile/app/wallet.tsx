@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
   historyBorder: {
-    ...StyleSheet.absoluteFillObject, borderRadius: 20,
+    ...StyleSheet.absoluteFill, borderRadius: 20,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
   historyRow: {

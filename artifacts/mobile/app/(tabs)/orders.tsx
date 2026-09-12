@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   walletStatDivider: { width: 1, marginVertical: 6 },
   walletBottomBorder: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 2 },
   walletBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.22)',

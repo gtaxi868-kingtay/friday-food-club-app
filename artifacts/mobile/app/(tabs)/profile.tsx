@@ -39,7 +39,7 @@ export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { profile, orders } = useApp();
-  const { hasClubPass, clubPassExpiry } = useAuth();
+  const { user, hasClubPass, clubPassExpiry, logout } = useAuth();
 
   const tierGradient = TIER_COLORS[profile.tier] ?? TIER_COLORS['Gold'];
   const totalSpent = orders
@@ -185,6 +185,30 @@ export default function ProfileScreen() {
           </LinearGradient>
         </View>
 
+        {/* Wallet */}
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionDot, { backgroundColor: colors.gold }]} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Wallet</Text>
+        </View>
+
+        <Pressable
+          style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginBottom: 28 }]}
+          onPress={() => router.push(user ? '/add-funds' : '/sign-in')}
+        >
+          <GlassView intensity={40} style={[styles.walletCard, { borderColor: 'rgba(212,175,55,0.15)' }]}>
+            <View>
+              <Text style={[styles.walletLabel, { color: colors.mutedForeground }]}>Balance</Text>
+              <Text style={[styles.walletValue, { color: colors.gold }]}>
+                ${profile.walletBalance.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.walletAddBtn}>
+              <Ionicons name="add" size={16} color="#0A0A0A" />
+              <Text style={styles.walletAddText}>{user ? 'Add Funds' : 'Sign In'}</Text>
+            </View>
+          </GlassView>
+        </Pressable>
+
         {/* NFC Membership Card */}
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionDot, { backgroundColor: colors.gold }]} />
@@ -305,6 +329,23 @@ export default function ProfileScreen() {
             </React.Fragment>
           ))}
         </GlassView>
+
+        {/* Account */}
+        <Pressable
+          style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1, marginTop: 16 }]}
+          onPress={() => (user ? logout() : router.push('/sign-in'))}
+        >
+          <GlassView intensity={30} style={styles.accountRow}>
+            <Ionicons
+              name={user ? 'log-out-outline' : 'log-in-outline'}
+              size={17}
+              color={user ? '#E8294A' : colors.gold}
+            />
+            <Text style={[styles.accountRowText, { color: user ? '#E8294A' : colors.gold }]}>
+              {user ? `Sign Out (${user.email})` : 'Sign In / Sign Up'}
+            </Text>
+          </GlassView>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -456,7 +497,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   clubPassBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.3)',
@@ -533,7 +574,7 @@ const styles = StyleSheet.create({
     height: 3,
   },
   nfcBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.28)',
@@ -578,9 +619,35 @@ const styles = StyleSheet.create({
   chefCtaTitle: { fontSize: 16, fontFamily: 'Inter_700Bold', color: '#D4AF37' },
   chefCtaSub: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 3 },
   chefCtaBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.25)',
   },
+  walletCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  walletLabel: { fontSize: 12, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5, marginBottom: 4 },
+  walletValue: { fontSize: 26, fontFamily: 'PlayfairDisplay_700Bold' },
+  walletAddBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#D4AF37', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9,
+  },
+  walletAddText: { fontSize: 13, fontFamily: 'Inter_700Bold', color: '#0A0A0A' },
+  accountRow: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  accountRowText: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
 });

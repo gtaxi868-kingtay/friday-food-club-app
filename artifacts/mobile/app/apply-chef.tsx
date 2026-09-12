@@ -638,12 +638,12 @@ const styles = StyleSheet.create({
   uploadCard: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, minHeight: 220 },
   uploadPreview: { width: '100%', height: 260, borderRadius: 20 },
   uploadOverlay: {
-    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 20,
+    ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 20,
     alignItems: 'center', justifyContent: 'center', gap: 12,
   },
   uploadingText: { color: '#D4AF37', fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   uploadSuccessOverlay: {
-    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20,
+    ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20,
     alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   uploadSuccessBadge: { flexDirection: 'row', alignItems: 'center', gap: 8 },

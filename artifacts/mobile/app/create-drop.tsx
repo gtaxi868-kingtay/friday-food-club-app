@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
     borderRadius: 20, overflow: 'hidden', padding: 16, marginBottom: 24,
     borderWidth: 1, borderColor: 'rgba(212,175,55,0.18)',
   },
-  aiCardBorder: { ...StyleSheet.absoluteFillObject, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(212,175,55,0.18)' },
+  aiCardBorder: { ...StyleSheet.absoluteFill, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(212,175,55,0.18)' },
   toneRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   toneBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
   },
   photoPreview: { width: '100%', height: '100%' },
   photoPreviewError: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center', justifyContent: 'center',
   },

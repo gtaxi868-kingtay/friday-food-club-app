@@ -8,7 +8,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, ChefHat, Users, Lock, PartyPopper } from "lucide-react";
+import { Loader2, ChefHat, Users, Lock, PartyPopper, Download, Apple } from "lucide-react";
+
+// Android has a real internal-distribution build; iOS doesn't yet (needs an
+// Apple Developer account for TestFlight/App Store). This link is tied to
+// one specific EAS build and expires ~2 weeks after it was cut — update it
+// whenever a new build replaces this one, until there's a permanent Play
+// Store listing to link to instead.
+const ANDROID_APK_URL = "https://expo.dev/accounts/king263tay/projects/friday-food-club/builds/84cd05f3-5bc1-461b-af09-14a14443981b";
+
+function detectPlatform(): "ios" | "android" | "other" {
+  if (typeof navigator === "undefined") return "other";
+  const ua = navigator.userAgent || "";
+  if (/android/i.test(ua)) return "android";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+  return "other";
+}
 
 // Public, unauthenticated — this is the page the landing page / WhatsApp
 // links actually point people to so a signup lands as a real row in the
@@ -77,6 +92,28 @@ export default function JoinWaitlist() {
               <p className="text-sm text-muted-foreground max-w-xs">
                 We'll reach out the moment there's a drop — or real demand — near you.
               </p>
+
+              <div className="w-full mt-4 pt-6 border-t border-border">
+                <p className="text-sm font-medium text-foreground mb-3">Get the app now</p>
+                {detectPlatform() === "ios" ? (
+                  <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground rounded-md border border-border px-4 py-3">
+                    <Apple className="w-4 h-4 shrink-0" />
+                    iOS app is coming soon — we'll notify you the moment it's ready.
+                  </div>
+                ) : (
+                  <a
+                    href={ANDROID_APK_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2.5 text-sm font-medium"
+                  >
+                    <Download className="w-4 h-4" /> Download for Android
+                  </a>
+                )}
+                {detectPlatform() === "other" && (
+                  <p className="text-xs text-muted-foreground mt-2">iPhone user? iOS is coming soon.</p>
+                )}
+              </div>
             </div>
           ) : (
             <Form {...form}>

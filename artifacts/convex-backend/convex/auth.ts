@@ -6,6 +6,8 @@ import {
   parseSessionToken,
   verifyPassword,
 } from "./lib/auth";
+import { verifyGoogleIdToken, verifyAppleIdToken, type VerifiedIdentity } from "./lib/oauth";
+import type { MutationCtx } from "./_generated/server";
 
 export const register = mutation({
   args: {
@@ -66,6 +68,56 @@ export const login = mutation({
       },
     };
   },
+});
+
+/** Find-or-create by verified email, then issue a normal session token —
+ *  from here on an OAuth-created account behaves exactly like any other. A
+ *  random, never-typed password hash fills the required field since these
+ *  accounts sign in via provider token, not a password. */
+async function loginOrCreateFromIdentity(ctx: MutationCtx, identity: VerifiedIdentity) {
+  let user = await ctx.db
+    .query("users")
+    .withIndex("by_email", (q) => q.eq("email", identity.email))
+    .unique();
+
+  if (!user) {
+    const name = identity.name?.trim() || identity.email.split("@")[0];
+    const unusablePassword = await hashPassword(crypto.randomUUID());
+    const userId = await ctx.db.insert("users", {
+      name,
+      email: identity.email,
+      passwordHash: unusablePassword,
+      role: "BUYER",
+      points: 0,
+      walletBalance: 0,
+      handle: `@${name.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+    });
+    user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError({ code: "INTERNAL", message: "Could not create account" });
+  }
+
+  const token = await createSessionToken(user._id, user.role);
+  return {
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      area: user.area,
+      chefId: user.chefId,
+    },
+  };
+}
+
+export const loginWithGoogle = mutation({
+  args: { idToken: v.string() },
+  handler: async (ctx, { idToken }) => loginOrCreateFromIdentity(ctx, await verifyGoogleIdToken(idToken)),
+});
+
+export const loginWithApple = mutation({
+  args: { idToken: v.string() },
+  handler: async (ctx, { idToken }) => loginOrCreateFromIdentity(ctx, await verifyAppleIdToken(idToken)),
 });
 
 export const me = query({

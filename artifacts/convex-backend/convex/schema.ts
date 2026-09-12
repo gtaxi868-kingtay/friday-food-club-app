@@ -195,7 +195,7 @@ export default defineSchema({
   // browser redirect is never enough to mark an order paid; only the signed
   // webhook may move a transaction to PAID.
   paymentTransactions: defineTable({
-    kind: v.union(v.literal("ORDER"), v.literal("CLUB_PASS")),
+    kind: v.union(v.literal("ORDER"), v.literal("CLUB_PASS"), v.literal("WALLET_TOPUP")),
     orderId: v.optional(v.id("orders")),
     subscriptionId: v.optional(v.id("subscriptions")),
     userId: v.string(),

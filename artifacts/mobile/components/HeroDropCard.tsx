@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   image: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
   },
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   cardBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 28,
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.22)',

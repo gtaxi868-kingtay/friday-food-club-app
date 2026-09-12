@@ -7,19 +7,19 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0A0A0A"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.fridayfoodclub.app"
     },
     "android": {
       "package": "com.fridayfoodclub.app",
-      "backgroundColor": "#0A0A0A"
+      "backgroundColor": "#0A0A0A",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -33,6 +33,14 @@
       ],
       "expo-font",
       "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0A0A0A"
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -52,11 +60,18 @@
         {
           "cameraPermission": "Friday Food Club uses your camera to scan a drop tag QR code."
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0dc75e24-f45c-471d-8c91-891476a570b1"
+      }
+    },
+    "owner": "king263tay"
   }
 }

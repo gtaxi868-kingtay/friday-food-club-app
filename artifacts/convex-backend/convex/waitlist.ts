@@ -41,3 +41,13 @@ export const list = query({
     return rows.sort((a, b) => b._creationTime - a._creationTime);
   },
 });
+
+export const remove = mutation({
+  args: { sessionToken: v.string(), waitlistId: v.id("waitlist") },
+  handler: async (ctx, { sessionToken, waitlistId }) => {
+    const session = await parseSessionToken(sessionToken);
+    if (session?.role !== "ADMIN") throw new ConvexError({ code: "FORBIDDEN", message: "Requires role: ADMIN" });
+    await ctx.db.delete(waitlistId);
+    return { ok: true };
+  },
+});

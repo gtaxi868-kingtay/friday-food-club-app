@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   listCardBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 20,
     borderWidth: 1,
   },

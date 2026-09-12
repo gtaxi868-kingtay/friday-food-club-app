@@ -181,10 +181,9 @@ function mapOrder(o: any): Order {
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const convex = useConvex();
-  const { token: sessionToken } = useAuth();
+  const { token: sessionToken, user: authUser } = useAuth();
   const [guestToken, setGuestToken] = useState<string | null>(null);
   const [guestTokenError, setGuestTokenError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   // Closest-first feed — best-effort: a denied/unavailable permission just
@@ -255,6 +254,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const orderedDropIds = new Set(orders.filter((o) => o.status !== 'cancelled').map((o) => o.dropId));
   const isLoadingDrops = dropsRaw === undefined;
   const dropsError = guestTokenError;
+
+  // Signed-in buyers get their real name/wallet; guests keep the static
+  // placeholder — nothing here was ever wired to the authenticated user
+  // before, so the Profile tab showed a permanently blank name.
+  const profile: UserProfile = authUser
+    ? {
+        ...DEFAULT_PROFILE,
+        name: authUser.name,
+        handle: `@${authUser.email.split('@')[0]}`,
+        walletBalance: authUser.walletBalance ?? 0,
+        ordersCount: orders.filter((o) => o.status !== 'cancelled').length,
+      }
+    : { ...DEFAULT_PROFILE, ordersCount: orders.filter((o) => o.status !== 'cancelled').length };
 
   const placeOrderMutation = useMutation(api.orders.place);
   const startOrderCheckout = useAction(api.payments.startOrderCheckout);

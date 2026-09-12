@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   },
   timerText: { fontSize: 11, fontFamily: 'Inter_700Bold' },
   orderedOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(10,10,10,0.55)',
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   soldOutOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(10,10,10,0.72)',
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   price: { fontSize: 22, fontFamily: 'Inter_700Bold', letterSpacing: -0.5 },
   remainText: { fontSize: 12, fontFamily: 'Inter_400Regular' },
   border: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(212,175,55,0.18)',

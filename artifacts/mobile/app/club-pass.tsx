@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     gap: 14, marginBottom: 16, overflow: 'hidden',
   },
   heroBorder: {
-    ...StyleSheet.absoluteFillObject, borderRadius: 28,
+    ...StyleSheet.absoluteFill, borderRadius: 28,
     borderWidth: 1, borderColor: 'rgba(212,175,55,0.35)',
   },
   heroTitle: {
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(76,175,80,0.25)',
   },
   activeBorder: {
-    ...StyleSheet.absoluteFillObject, borderRadius: 16,
+    ...StyleSheet.absoluteFill, borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(76,175,80,0.25)',
   },
   activeTitle: {
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.06)',
   },
   benefitsBorder: {
-    ...StyleSheet.absoluteFillObject, borderRadius: 20,
+    ...StyleSheet.absoluteFill, borderRadius: 20,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
   benefitRow: {

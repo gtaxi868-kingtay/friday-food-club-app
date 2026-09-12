@@ -20,6 +20,7 @@ export interface AuthUser {
   email:  string;
   role:   'BUYER' | 'CHEF' | 'ADMIN';
   area?:  string | null;
+  walletBalance: number;
   chefId?: string | null;
   chefVerified?: boolean | null;
   chefVerificationStatus?: string | null;
@@ -35,6 +36,8 @@ interface AuthContextValue {
   clubPassExpiry:    string | null;
   login:             (email: string, password: string) => Promise<void>;
   register:          (name: string, email: string, password: string, area?: string) => Promise<void>;
+  loginWithGoogleIdToken: (idToken: string) => Promise<void>;
+  loginWithAppleIdToken:  (idToken: string) => Promise<void>;
   logout:            () => Promise<void>;
   refreshSubscription: () => Promise<void>;
 }
@@ -49,6 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginMutation = useMutation(api.auth.login);
   const registerMutation = useMutation(api.auth.register);
+  const loginWithGoogleMutation = useMutation(api.auth.loginWithGoogle);
+  const loginWithAppleMutation = useMutation(api.auth.loginWithApple);
   const setPushTokenMutation = useMutation(api.auth.setPushToken);
 
   // `me` is a reactive query — user profile updates live everywhere the
@@ -57,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const user: AuthUser | null = me
     ? {
         id: me.id, name: me.name, email: me.email, role: me.role, area: me.area,
+        walletBalance: me.walletBalance ?? 0,
         chefId: me.chefId, chefVerified: me.chefVerified, chefVerificationStatus: me.chefVerificationStatus,
       }
     : null;
@@ -141,6 +147,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void registerPushToken(data.token);
   }, [registerMutation, registerPushToken]);
 
+  const loginWithGoogleIdToken = useCallback(async (idToken: string) => {
+    const data = await loginWithGoogleMutation({ idToken });
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    setToken(data.token);
+    setAuthError(null);
+    void registerPushToken(data.token);
+  }, [loginWithGoogleMutation, registerPushToken]);
+
+  const loginWithAppleIdToken = useCallback(async (idToken: string) => {
+    const data = await loginWithAppleMutation({ idToken });
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    setToken(data.token);
+    setAuthError(null);
+    void registerPushToken(data.token);
+  }, [loginWithAppleMutation, registerPushToken]);
+
   const logout = useCallback(async () => {
     await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
     setToken(null);
@@ -157,7 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user, token, isLoading,
       authError, retryAuthRestore: restoreAuth,
       hasClubPass, clubPassExpiry,
-      login, register, logout, refreshSubscription,
+      login, register, loginWithGoogleIdToken, loginWithAppleIdToken, logout, refreshSubscription,
     }}>
       {children}
     </AuthContext.Provider>

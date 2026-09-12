@@ -102,6 +102,14 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
+        name="sign-in"
+        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="add-funds"
+        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
         name="apply-chef"
         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
       />
