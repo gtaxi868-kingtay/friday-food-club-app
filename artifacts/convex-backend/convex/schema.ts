@@ -45,8 +45,14 @@ export default defineSchema({
     nationalIdUploadId: v.optional(v.id("uploads")),
     rejectionReason: v.optional(v.string()),
     submittedAt: v.optional(v.number()),
+    verifiedAt: v.optional(v.number()),
+    // Referral growth loop: a verified chef's shareable code, and who
+    // referred this chef in (self-reported at application time).
+    referralCode: v.optional(v.string()),
+    referredByChefId: v.optional(v.id("chefs")),
   })
     .index("by_verified", ["isVerified"])
+    .index("by_referralCode", ["referralCode"])
     .index("by_verificationStatus", ["verificationStatus"]),
 
   // ── Admin manual wallet credits — audit ledger ───────────────────────
@@ -219,6 +225,7 @@ export default defineSchema({
   })
     .index("by_orderId", ["orderId"])
     .index("by_subscriptionId", ["subscriptionId"])
+    .index("by_userId", ["userId"])
     .index("by_providerReference", ["providerReference"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
@@ -272,5 +279,7 @@ export default defineSchema({
     walletFreezeThreshold: v.number(),
     boostPrice: v.optional(v.number()),
     noShowPenalty: v.optional(v.number()),
+    referralRate: v.optional(v.number()),
+    referralDurationDays: v.optional(v.number()),
   }).index("by_key", ["key"]),
 });

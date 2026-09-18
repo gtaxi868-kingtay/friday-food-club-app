@@ -173,6 +173,22 @@ export const getForOrder = query({
   },
 });
 
+export const myWalletHistory = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const session = await parseSessionToken(sessionToken);
+    if (!session) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Not authenticated" });
+    const rows = await ctx.db
+      .query("paymentTransactions")
+      .withIndex("by_userId", (q) => q.eq("userId", session.userId))
+      .filter((q) => q.eq(q.field("kind"), "WALLET_TOPUP"))
+      .collect();
+    return rows
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((r) => ({ id: r._id, amount: r.amount, status: r.status, createdAt: r.createdAt }));
+  },
+});
+
 export const prepareOrder = internalMutation({
   args: { orderId: v.id("orders"), sessionToken: v.string() },
   handler: async (ctx, { orderId, sessionToken }) => {

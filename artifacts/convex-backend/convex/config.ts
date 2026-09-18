@@ -8,6 +8,8 @@ export const DEFAULT_WALLET_FREEZE_THRESHOLD = -50;
 export const DEFAULT_BOOST_PRICE = 15;
 export const DEFAULT_BOOST_DURATION_HOURS = 24;
 export const DEFAULT_NO_SHOW_PENALTY = 10;
+export const DEFAULT_REFERRAL_RATE = 0.02;
+export const DEFAULT_REFERRAL_DURATION_DAYS = 90;
 
 export const get = query({
   args: {},
@@ -25,12 +27,16 @@ export const get = query({
         walletFreezeThreshold: DEFAULT_WALLET_FREEZE_THRESHOLD,
         boostPrice: DEFAULT_BOOST_PRICE,
         noShowPenalty: DEFAULT_NO_SHOW_PENALTY,
+        referralRate: DEFAULT_REFERRAL_RATE,
+        referralDurationDays: DEFAULT_REFERRAL_DURATION_DAYS,
       };
     }
     return {
       ...cfg,
       boostPrice: cfg.boostPrice ?? DEFAULT_BOOST_PRICE,
       noShowPenalty: cfg.noShowPenalty ?? DEFAULT_NO_SHOW_PENALTY,
+      referralRate: cfg.referralRate ?? DEFAULT_REFERRAL_RATE,
+      referralDurationDays: cfg.referralDurationDays ?? DEFAULT_REFERRAL_DURATION_DAYS,
     };
   },
 });
@@ -48,6 +54,8 @@ export const update = mutation({
     walletFreezeThreshold: v.optional(v.number()),
     boostPrice: v.optional(v.number()),
     noShowPenalty: v.optional(v.number()),
+    referralRate: v.optional(v.number()),
+    referralDurationDays: v.optional(v.number()),
   },
   handler: async (ctx, { sessionToken, ...patch }) => {
     const session = await parseSessionToken(sessionToken);
@@ -66,6 +74,8 @@ export const update = mutation({
         walletFreezeThreshold: patch.walletFreezeThreshold ?? DEFAULT_WALLET_FREEZE_THRESHOLD,
         boostPrice: patch.boostPrice ?? DEFAULT_BOOST_PRICE,
         noShowPenalty: patch.noShowPenalty ?? DEFAULT_NO_SHOW_PENALTY,
+        referralRate: patch.referralRate ?? DEFAULT_REFERRAL_RATE,
+        referralDurationDays: patch.referralDurationDays ?? DEFAULT_REFERRAL_DURATION_DAYS,
       });
       return;
     }

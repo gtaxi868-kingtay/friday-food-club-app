@@ -110,6 +110,10 @@ function RootLayoutNav() {
         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
       />
       <Stack.Screen
+        name="my-wallet"
+        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
         name="apply-chef"
         options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }}
       />

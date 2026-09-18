@@ -46,6 +46,8 @@ export default function AdminDashboard() {
   const [freezeThreshold, setFreezeThreshold] = useState<string>("");
   const [boostPrice, setBoostPrice] = useState<string>("");
   const [noShowPenalty, setNoShowPenalty] = useState<string>("");
+  const [referralRate, setReferralRate] = useState<string>("");
+  const [referralDurationDays, setReferralDurationDays] = useState<string>("");
   const [configUpdating, setConfigUpdating] = useState(false);
   const [resolvingDropId, setResolvingDropId] = useState<string | null>(null);
   const [walletForms, setWalletForms] = useState<Record<string, WalletForm>>({});
@@ -65,6 +67,8 @@ export default function AdminDashboard() {
     setFreezeThreshold((config.walletFreezeThreshold ?? -50).toString());
     setBoostPrice((config.boostPrice ?? 15).toString());
     setNoShowPenalty((config.noShowPenalty ?? 10).toString());
+    setReferralRate(((config.referralRate ?? 0.02) * 100).toString());
+    setReferralDurationDays((config.referralDurationDays ?? 90).toString());
   }
 
   const formatCurrency = (amount: number | undefined) => {
@@ -96,6 +100,8 @@ export default function AdminDashboard() {
         walletFreezeThreshold: parseFloat(freezeThreshold),
         boostPrice: parseFloat(boostPrice),
         noShowPenalty: parseFloat(noShowPenalty),
+        referralRate: parseFloat(referralRate) / 100,
+        referralDurationDays: parseFloat(referralDurationDays),
       });
       toast({ title: "Config Saved", description: "Platform settings updated." });
     } catch (err: any) {
@@ -561,6 +567,27 @@ export default function AdminDashboard() {
                       className="bg-secondary/30"
                     />
                     <p className="text-xs text-muted-foreground">Docked per unfulfilled order when you resolve a no-show below.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Referral Rate (% of platform fee)</label>
+                    <Input
+                      type="number"
+                      value={referralRate}
+                      onChange={(e) => setReferralRate(e.target.value)}
+                      className="bg-secondary/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Referral Window (days)</label>
+                    <Input
+                      type="number"
+                      value={referralDurationDays}
+                      onChange={(e) => setReferralDurationDays(e.target.value)}
+                      className="bg-secondary/30"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A referring chef earns this % of the platform's cut on every sale their recruit makes, for this many days after that chef gets verified.
+                    </p>
                   </div>
                   <Button
                     onClick={handleConfigSave}

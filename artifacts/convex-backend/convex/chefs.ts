@@ -78,6 +78,37 @@ export const myStatus = query({
   },
 });
 
+export const myReferral = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const session = await parseSessionToken(sessionToken);
+    if (!session || (session.role !== "CHEF" && session.role !== "ADMIN")) {
+      throw new ConvexError({ code: "FORBIDDEN", message: "Requires role: CHEF or ADMIN" });
+    }
+    const user = await ctx.db.get(session.userId);
+    if (!user?.chefId) throw new ConvexError({ code: "NOT_FOUND", message: "No chef profile linked to this account" });
+    const chef = await ctx.db.get(user.chefId);
+    if (!chef) throw new ConvexError({ code: "NOT_FOUND", message: "No chef profile linked to this account" });
+
+    const referred = await ctx.db
+      .query("chefs")
+      .filter((q) => q.eq(q.field("referredByChefId"), chef._id))
+      .collect();
+
+    const credits = await ctx.db.query("adminCredits").withIndex("by_chefId", (q) => q.eq("chefId", chef._id)).collect();
+    const totalEarned = credits
+      .filter((c) => c.note.startsWith("Referral bonus:"))
+      .reduce((a, c) => a + c.amount, 0);
+
+    return {
+      referralCode: chef.referralCode ?? null,
+      referredCount: referred.length,
+      activeReferrals: referred.filter((r) => r.verificationStatus === "VERIFIED").length,
+      totalEarned,
+    };
+  },
+});
+
 export const myWallet = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, { sessionToken }) => {
@@ -166,8 +197,9 @@ export const apply = mutation({
     cuisine: v.optional(v.string()),
     foodBadgeUploadId: v.id("uploads"),
     nationalIdUploadId: v.id("uploads"),
+    referralCode: v.optional(v.string()),
   },
-  handler: async (ctx, { sessionToken, kitchenName, area, cuisine, foodBadgeUploadId, nationalIdUploadId }) => {
+  handler: async (ctx, { sessionToken, kitchenName, area, cuisine, foodBadgeUploadId, nationalIdUploadId, referralCode }) => {
     const session = await parseSessionToken(sessionToken);
     if (!session) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Not authenticated" });
 
@@ -182,6 +214,20 @@ export const apply = mutation({
     if (chef?.verificationStatus === "PENDING_REVIEW") throw new ConvexError({ code: "CONFLICT", message: "Your application is already under review." });
     if (chef?.verificationStatus === "VERIFIED") throw new ConvexError({ code: "CONFLICT", message: "Your chef profile is already verified." });
 
+    // Referral is only captured once, on the first application — a chef
+    // reapplying after rejection keeps whatever referrer they already had.
+    let referredByChefId: Id<"chefs"> | undefined = chef?.referredByChefId;
+    if (!referredByChefId && referralCode) {
+      const normalized = referralCode.trim().toLowerCase();
+      if (normalized) {
+        const referrer = await ctx.db
+          .query("chefs")
+          .withIndex("by_referralCode", (q) => q.eq("referralCode", normalized))
+          .unique();
+        if (referrer) referredByChefId = referrer._id;
+      }
+    }
+
     const patch = {
       name: kitchenName,
       handle: `@${kitchenName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
@@ -193,6 +239,7 @@ export const apply = mutation({
       nationalIdUploadId,
       submittedAt: Date.now(),
       rejectionReason: undefined,
+      referredByChefId,
     };
 
     let chefId;

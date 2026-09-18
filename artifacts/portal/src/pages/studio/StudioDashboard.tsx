@@ -3,18 +3,30 @@ import { useSession } from "@/components/SessionProvider";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@workspace/convex-backend/convex/_generated/api";
 import { Link } from "wouter";
-import { Plus, Wallet, TrendingUp, Clock, Package, CheckCircle2, AlertTriangle, Banknote, XCircle, RefreshCw, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Wallet, TrendingUp, Clock, Package, CheckCircle2, AlertTriangle, Banknote, XCircle, RefreshCw, Sparkles, Loader2, Gift, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 
+const INVITE_BASE_URL = "https://ffc-fresh.vercel.app/invite.html";
+
 export default function StudioDashboard() {
   const { user, token } = useSession();
   const { toast } = useToast();
   const chefId = user?.chefId || "";
   const [boostingId, setBoostingId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const referral = useQuery(api.chefs.myReferral, token ? { sessionToken: token } : "skip");
+  const referralLink = referral?.referralCode ? `${INVITE_BASE_URL}?ref=${referral.referralCode}` : null;
+  const handleCopyLink = () => {
+    if (!referralLink) return;
+    navigator.clipboard.writeText(referralLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const rawDrops = useQuery(api.chefs.drops, chefId ? { chefId: chefId as any, limit: 50 } : "skip");
   const dropsLoading = !!chefId && rawDrops === undefined;
@@ -208,6 +220,45 @@ export default function StudioDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Refer a Chef */}
+      {referral?.referralCode && (
+        <Card className="bg-card border-card-border">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Gift className="w-4 h-4 text-primary" /> Refer a Chef
+            </CardTitle>
+            <CardDescription>
+              Earn 2% of every sale they make for their first 90 days as a chef — for as long as they keep selling.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex-1 px-3 py-2 rounded-md bg-secondary/40 border border-border text-sm text-foreground truncate font-mono">
+                {referralLink}
+              </div>
+              <Button variant="outline" onClick={handleCopyLink} className="shrink-0">
+                {copied ? <Check className="w-4 h-4 mr-2 text-primary" /> : <Copy className="w-4 h-4 mr-2" />}
+                {copied ? "Copied" : "Copy Link"}
+              </Button>
+            </div>
+            <div className="flex gap-6 mt-4 text-sm">
+              <div>
+                <span className="font-semibold text-foreground">{referral.referredCount}</span>
+                <span className="text-muted-foreground ml-1.5">chefs referred</span>
+              </div>
+              <div>
+                <span className="font-semibold text-foreground">{referral.activeReferrals}</span>
+                <span className="text-muted-foreground ml-1.5">active</span>
+              </div>
+              <div>
+                <span className="font-semibold text-primary">{formatCurrency(referral.totalEarned)}</span>
+                <span className="text-muted-foreground ml-1.5">earned</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Transactions */}
       {!walletLoading && (walletData?.recentTransactions ?? (walletData as any)?.recentPayouts ?? []).length > 0 && (

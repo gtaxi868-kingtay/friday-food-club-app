@@ -11,6 +11,22 @@ async function requireAdmin(ctx: QueryCtx | MutationCtx, sessionToken: string) {
   return session;
 }
 
+/** Short, memorable, unique — based on the chef's own handle so it reads
+ *  naturally in a shared link, falling back to a random suffix on collision. */
+async function generateReferralCode(ctx: MutationCtx, handle: string): Promise<string> {
+  const base = handle.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20) || "chef";
+  let candidate = base;
+  let attempt = 0;
+  while (
+    await ctx.db.query("chefs").withIndex("by_referralCode", (q) => q.eq("referralCode", candidate)).unique()
+  ) {
+    attempt += 1;
+    candidate = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+    if (attempt > 5) break;
+  }
+  return candidate;
+}
+
 export const stats = query({
   args: { sessionToken: v.string() },
   handler: async (ctx, { sessionToken }) => {
@@ -177,7 +193,14 @@ export const verifyChef = mutation({
     if (!chef.foodBadgeUploadId || !chef.nationalIdUploadId) {
       throw new ConvexError({ code: "MISSING_DOCS", message: "Cannot approve: chef has not submitted required documents." });
     }
-    await ctx.db.patch(chefId, { isVerified: true, verificationStatus: "VERIFIED", rejectionReason: undefined });
+    const referralCode = chef.referralCode ?? (await generateReferralCode(ctx, chef.handle));
+    await ctx.db.patch(chefId, {
+      isVerified: true,
+      verificationStatus: "VERIFIED",
+      rejectionReason: undefined,
+      verifiedAt: Date.now(),
+      referralCode,
+    });
     const user = await ctx.db.query("users").withIndex("by_chefId", (q) => q.eq("chefId", chefId)).first();
     if (user) await ctx.db.patch(user._id, { role: "CHEF" });
     return { id: chefId, isVerified: true, verificationStatus: "VERIFIED" as const };
@@ -274,6 +297,7 @@ export const addChef = mutation({
       Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("") + String(Math.floor(Math.random() * 9000) + 1000);
     const displayName = kitchenName ?? name;
     const handle = `@${displayName.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24)}`;
+    const referralCode = await generateReferralCode(ctx, handle);
 
     const chefId = await ctx.db.insert("chefs", {
       name: displayName,
@@ -282,6 +306,8 @@ export const addChef = mutation({
       region: area,
       isVerified: true,
       verificationStatus: "VERIFIED",
+      verifiedAt: Date.now(),
+      referralCode,
       rating: 0,
       totalDrops: 0,
       successfulDrops: 0,

@@ -8,7 +8,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { parseSessionToken, requireVerifiedChef } from "./lib/auth";
-import { DEFAULT_WALLET_FREEZE_THRESHOLD } from "./config";
+import { DEFAULT_WALLET_FREEZE_THRESHOLD, DEFAULT_REFERRAL_RATE, DEFAULT_REFERRAL_DURATION_DAYS } from "./config";
 
 export const verify = mutation({
   args: { sessionToken: v.string(), pickupToken: v.string(), chefId: v.optional(v.id("chefs")) },
@@ -51,6 +51,30 @@ export const verify = mutation({
       cashCollected: isCash ? gross : undefined,
     });
     await ctx.db.patch(chefId, { walletBalance: newWalletBalance });
+
+    // Referral growth loop: the referring chef earns a % of the platform's
+    // own cut (not the selling chef's payout) on every sale the chef they
+    // brought in makes, for a limited window after that chef got verified.
+    let referralBonus = 0;
+    if (chef.referredByChefId && chef.verifiedAt) {
+      const durationDays = cfg?.referralDurationDays ?? DEFAULT_REFERRAL_DURATION_DAYS;
+      const withinWindow = Date.now() - chef.verifiedAt < durationDays * 86_400_000;
+      if (withinWindow) {
+        const rate = cfg?.referralRate ?? DEFAULT_REFERRAL_RATE;
+        referralBonus = Math.round(platformShare * rate * 100) / 100;
+        if (referralBonus > 0) {
+          const referrer = await ctx.db.get(chef.referredByChefId);
+          if (referrer) {
+            await ctx.db.patch(referrer._id, { walletBalance: referrer.walletBalance + referralBonus });
+            await ctx.db.insert("adminCredits", {
+              chefId: referrer._id,
+              amount: referralBonus,
+              note: `Referral bonus: ${chef.name}'s sale ("${drop?.title ?? "a drop"}")`,
+            });
+          }
+        }
+      }
+    }
 
     return {
       orderId: order._id,

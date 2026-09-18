@@ -186,6 +186,7 @@ export default function ApplyChefScreen() {
   const [kitchenName, setKitchenName] = useState('');
   const [area, setArea] = useState('');
   const [cuisine, setCuisine] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [showCuisinePicker, setShowCuisinePicker] = useState(false);
 
@@ -273,6 +274,7 @@ export default function ApplyChefScreen() {
         cuisine: cuisine || 'Home Cooking',
         foodBadgeUploadId: foodBadge.uploadId,
         nationalIdUploadId: nationalId.uploadId,
+        referralCode: referralCode.trim() || undefined,
       });
       // Clear the BUYER token — the next login will produce a CHEF token
       // once the admin approves the application. This prevents stale role access.
@@ -397,6 +399,20 @@ export default function ApplyChefScreen() {
                   </ScrollView>
                 </GlassView>
               )}
+
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Referral Code <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
+              <GlassView intensity={30} style={[styles.inputWrap, { borderColor: referralCode ? colors.gold + '55' : 'rgba(255,255,255,0.08)' }]}>
+                <TextInput
+                  style={[styles.input, { color: colors.foreground }]}
+                  placeholder="Referred by another chef? Enter their code"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={referralCode}
+                  onChangeText={setReferralCode}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={30}
+                />
+              </GlassView>
             </View>
           </View>
         )}
@@ -454,6 +470,12 @@ export default function ApplyChefScreen() {
               <View style={[styles.reviewDivider, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
               <ReviewRow label="Cuisine" value={cuisine || 'Home Cooking'} colors={colors} />
               <View style={[styles.reviewDivider, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
+              {!!referralCode && (
+                <>
+                  <ReviewRow label="Referred By" value={referralCode} colors={colors} />
+                  <View style={[styles.reviewDivider, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
+                </>
+              )}
               <ReviewRow
                 label="Food Badge"
                 value={foodBadge.uploadId ? '✓ Uploaded' : '— Missing'}

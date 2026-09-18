@@ -193,7 +193,7 @@ export default function ProfileScreen() {
 
         <Pressable
           style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginBottom: 28 }]}
-          onPress={() => router.push(user ? '/add-funds' : '/sign-in')}
+          onPress={() => router.push(user ? '/my-wallet' : '/sign-in')}
         >
           <GlassView intensity={40} style={[styles.walletCard, { borderColor: 'rgba(212,175,55,0.15)' }]}>
             <View>
@@ -203,8 +203,8 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <View style={styles.walletAddBtn}>
-              <Ionicons name="add" size={16} color="#0A0A0A" />
-              <Text style={styles.walletAddText}>{user ? 'Add Funds' : 'Sign In'}</Text>
+              <Ionicons name={user ? 'wallet-outline' : 'add'} size={16} color="#0A0A0A" />
+              <Text style={styles.walletAddText}>{user ? 'View Wallet' : 'Sign In'}</Text>
             </View>
           </GlassView>
         </Pressable>
