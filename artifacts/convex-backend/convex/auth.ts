@@ -15,10 +15,14 @@ export const register = mutation({
     email: v.string(),
     password: v.string(),
     area: v.optional(v.string()),
+    ageConfirmed: v.boolean(),
   },
-  handler: async (ctx, { name, email, password, area }) => {
+  handler: async (ctx, { name, email, password, area, ageConfirmed }) => {
     if (name.length < 2 || name.length > 80) throw new ConvexError("Invalid name");
     if (password.length < 6 || password.length > 128) throw new ConvexError("Password must be 6-128 chars");
+    // Enforced server-side too, not just as a disabled button client-side —
+    // a direct API call must not be able to skip the attestation.
+    if (!ageConfirmed) throw new ConvexError({ code: "AGE_NOT_CONFIRMED", message: "You must confirm you are 18 or older to create an account." });
     const normalizedEmail = email.toLowerCase();
 
     const existing = await ctx.db
@@ -37,6 +41,7 @@ export const register = mutation({
       points: 0,
       walletBalance: 0,
       handle: `@${name.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+      ageConfirmedAt: Date.now(),
     });
 
     const token = await createSessionToken(userId, "BUYER");

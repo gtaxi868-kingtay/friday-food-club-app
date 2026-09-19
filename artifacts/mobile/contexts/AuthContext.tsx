@@ -35,7 +35,7 @@ interface AuthContextValue {
   hasClubPass:       boolean;
   clubPassExpiry:    string | null;
   login:             (email: string, password: string) => Promise<void>;
-  register:          (name: string, email: string, password: string, area?: string) => Promise<void>;
+  register:          (name: string, email: string, password: string, ageConfirmed: boolean, area?: string) => Promise<void>;
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
   loginWithAppleIdToken:  (idToken: string) => Promise<void>;
   logout:            () => Promise<void>;
@@ -139,8 +139,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void registerPushToken(data.token);
   }, [loginMutation, registerPushToken]);
 
-  const register = useCallback(async (name: string, email: string, password: string, area?: string) => {
-    const data = await registerMutation({ name, email, password, area });
+  const register = useCallback(async (name: string, email: string, password: string, ageConfirmed: boolean, area?: string) => {
+    const data = await registerMutation({ name, email, password, area, ageConfirmed });
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token);
     setToken(data.token);
     setAuthError(null);

@@ -53,6 +53,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -106,12 +107,16 @@ export default function SignInScreen() {
       Alert.alert('Required', 'Please enter your name.');
       return;
     }
+    if (mode === 'signup' && !ageConfirmed) {
+      Alert.alert('Required', 'Please confirm you are 18 or older to continue.');
+      return;
+    }
     setLoading(true);
     try {
       if (mode === 'signin') {
         await login(email.trim().toLowerCase(), password);
       } else {
-        await register(name.trim(), email.trim().toLowerCase(), password);
+        await register(name.trim(), email.trim().toLowerCase(), password, ageConfirmed);
       }
       router.back();
     } catch (err: any) {
@@ -216,6 +221,20 @@ export default function SignInScreen() {
             />
           </GlassView>
 
+          {mode === 'signup' && (
+            <Pressable
+              style={styles.ageRow}
+              onPress={() => setAgeConfirmed((v) => !v)}
+            >
+              <View style={[styles.checkbox, ageConfirmed && { backgroundColor: colors.gold, borderColor: colors.gold }]}>
+                {ageConfirmed && <Ionicons name="checkmark" size={13} color="#0A0A0A" />}
+              </View>
+              <Text style={[styles.ageRowText, { color: colors.mutedForeground }]}>
+                I confirm I am 18 years of age or older.
+              </Text>
+            </Pressable>
+          )}
+
           <Pressable
             style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginTop: 20 }]}
             onPress={handleSubmit}
@@ -278,6 +297,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, height: 50,
   },
   input: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular' },
+  ageRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ageRowText: { flex: 1, fontSize: 12.5, fontFamily: 'Inter_400Regular', lineHeight: 17 },
   ctaBtn: {
     borderRadius: 16, height: 52, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center', gap: 8,

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { AuthShell } from "@/components/layout/AuthShell";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +20,9 @@ const registerSchema = z.object({
   name: z.string().min(2, "Name is required"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  ageConfirmed: z.boolean().refine((v) => v === true, {
+    message: "You must confirm you are 18 or older to create an account",
+  }),
 });
 
 export default function Register() {
@@ -27,7 +31,7 @@ export default function Register() {
 
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", password: "" },
+    defaultValues: { name: "", email: "", password: "", ageConfirmed: false },
   });
 
   const registerMutation = useMutation(api.auth.register);
@@ -100,6 +104,24 @@ export default function Register() {
                     <Input type="password" placeholder="••••••••" {...field} className="bg-secondary/50 border-secondary-foreground/10 focus-visible:ring-primary" />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="ageConfirmed"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-2 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-sm font-normal text-muted-foreground">
+                      I confirm I am 18 years of age or older.
+                    </FormLabel>
+                    <FormMessage />
+                  </div>
                 </FormItem>
               )}
             />

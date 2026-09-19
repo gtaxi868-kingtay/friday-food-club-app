@@ -16,6 +16,9 @@ export default defineSchema({
     walletBalance: v.number(),
     chefId: v.optional(v.id("chefs")), // replaces IS_CHEF edge
     expoPushToken: v.optional(v.string()),
+    // Self-attested at signup — a checkbox, not a stored birthdate, so we
+    // don't end up collecting more sensitive data than the checkbox itself.
+    ageConfirmedAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_nfcId", ["nfcId"])
