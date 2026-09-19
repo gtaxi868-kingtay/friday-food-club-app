@@ -72,6 +72,12 @@
         "projectId": "0dc75e24-f45c-471d-8c91-891476a570b1"
       }
     },
-    "owner": "king263tay"
+    "owner": "king263tay",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0dc75e24-f45c-471d-8c91-891476a570b1"
+    }
   }
 }

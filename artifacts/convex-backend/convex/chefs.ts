@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { parseSessionToken } from "./lib/auth";
 import { DEFAULT_WALLET_FREEZE_THRESHOLD } from "./config";
+import { resolveUploadUrl } from "./lib/uploads";
 import type { Id } from "./_generated/dataModel";
 
 export const list = query({
@@ -47,14 +48,15 @@ export const drops = query({
   handler: async (ctx, { chefId, limit }) => {
     const now = Date.now();
     const rows = await ctx.db.query("drops").withIndex("by_chefId", (q) => q.eq("chefId", chefId)).collect();
-    return rows
-      .sort((a, b) => b._creationTime - a._creationTime)
-      .slice(0, Math.min(limit ?? 30, 50))
-      .map((d) => ({
+    const page = rows.sort((a, b) => b._creationTime - a._creationTime).slice(0, Math.min(limit ?? 30, 50));
+    return Promise.all(
+      page.map(async (d) => ({
         ...d,
         remaining: Math.max(0, d.inventory - d.currentOrders),
         isFeatured: !!d.isFeatured && (d.featuredUntil === undefined || d.featuredUntil > now),
-      }));
+        photoUrl: await resolveUploadUrl(ctx, d.imageUploadId),
+      })),
+    );
   },
 });
 

@@ -21,6 +21,7 @@ import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_oauth from "../lib/oauth.js";
 import type * as lib_session from "../lib/session.js";
+import type * as lib_uploads from "../lib/uploads.js";
 import type * as locations from "../locations.js";
 import type * as nfc from "../nfc.js";
 import type * as orders from "../orders.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/oauth": typeof lib_oauth;
   "lib/session": typeof lib_session;
+  "lib/uploads": typeof lib_uploads;
   locations: typeof locations;
   nfc: typeof nfc;
   orders: typeof orders;

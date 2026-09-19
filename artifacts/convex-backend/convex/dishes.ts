@@ -11,6 +11,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { parseSessionToken } from "./lib/auth";
+import { resolveUploadUrl } from "./lib/uploads";
 
 /** A chef's public menu — every dish they've ever dropped, most-loved first. */
 export const list = query({
@@ -44,13 +45,15 @@ export const list = query({
       orderedDishIds = new Set(dropsOrdered.filter((d) => d.dishId).map((d) => d.dishId as string));
     }
 
-    return dishes
-      .map((d) => ({
+    const withPhotos = await Promise.all(
+      dishes.map(async (d) => ({
         ...d,
         lovedByMe: lovedIds.has(d._id),
         canLove: isMember && orderedDishIds.has(d._id),
-      }))
-      .sort((a, b) => b.loveCount - a.loveCount || b.lastDroppedAt - a.lastDroppedAt);
+        photoUrl: await resolveUploadUrl(ctx, d.imageUploadId),
+      })),
+    );
+    return withPhotos.sort((a, b) => b.loveCount - a.loveCount || b.lastDroppedAt - a.lastDroppedAt);
   },
 });
 

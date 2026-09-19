@@ -45,6 +45,7 @@ interface DropSummary {
   currentOrders: number;
   status: string;
   imageIndex: number;
+  imageUrl?: string | null;
   tags: string[];
   pickupLocation: string;
   expiresAt: string;
@@ -92,7 +93,7 @@ function DropHistoryCard({ drop, onPress }: { drop: DropSummary; onPress: () => 
     >
       <View style={styles.dropCardImage}>
         <Image
-          source={(DROP_IMAGES[drop.imageIndex] ?? DROP_IMAGES[1]) as any}
+          source={(drop.imageUrl ? { uri: drop.imageUrl } : DROP_IMAGES[drop.imageIndex] ?? DROP_IMAGES[1]) as any}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />
@@ -154,6 +155,7 @@ interface DishSummary {
   description: string;
   mealSlot: string;
   imageIndex: number;
+  imageUrl?: string | null;
   tags: string[];
   timesDropped: number;
   loveCount: number;
@@ -169,7 +171,7 @@ function DishCard({ dish, isTopVoted, onToggleLove }: { dish: DishSummary; isTop
     <View style={styles.dishCard}>
       <View style={styles.dishCardImage}>
         <Image
-          source={(DROP_IMAGES[dish.imageIndex] ?? DROP_IMAGES[1]) as any}
+          source={(dish.imageUrl ? { uri: dish.imageUrl } : DROP_IMAGES[dish.imageIndex] ?? DROP_IMAGES[1]) as any}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />
@@ -254,7 +256,7 @@ function MenuSection({ chefId, isRealId }: { chefId: string; isRealId: boolean }
   const loading = isRealId && rawDishes === undefined;
   const dishes: DishSummary[] = (rawDishes ?? []).map((d) => ({
     id: d._id, title: d.title, description: d.description, mealSlot: d.mealSlot,
-    imageIndex: d.imageIndex, tags: d.tags, timesDropped: d.timesDropped,
+    imageIndex: d.imageIndex, imageUrl: (d as any).photoUrl, tags: d.tags, timesDropped: d.timesDropped,
     loveCount: d.loveCount, lovedByMe: d.lovedByMe, canLove: d.canLove,
   }));
 
@@ -317,7 +319,7 @@ function DropsSection({ chefId, isRealId }: { chefId: string; isRealId: boolean 
   const drops: DropSummary[] = (rawDrops ?? []).map((d) => ({
     id: d._id, title: d.title, description: d.description, mealSlot: d.mealSlot,
     price: d.price, inventory: d.inventory, minOrders: d.minOrders, currentOrders: d.currentOrders,
-    status: d.status, imageIndex: d.imageIndex, tags: d.tags, pickupLocation: d.pickupLocation,
+    status: d.status, imageIndex: d.imageIndex, imageUrl: (d as any).photoUrl, tags: d.tags, pickupLocation: d.pickupLocation,
     expiresAt: new Date(d.expiresAt).toISOString(), createdAt: new Date(d._creationTime).toISOString(),
   }));
 

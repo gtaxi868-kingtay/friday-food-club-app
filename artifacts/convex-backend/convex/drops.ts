@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { parseSessionToken, requireVerifiedChef } from "./lib/auth";
 import { DEFAULT_WALLET_FREEZE_THRESHOLD, DEFAULT_BOOST_PRICE, DEFAULT_BOOST_DURATION_HOURS } from "./config";
+import { resolveUploadUrl } from "./lib/uploads";
 
 /** A boost only counts while it hasn't lapsed — admin-curated features
  *  (CurationPanel toggle, no featuredUntil) never expire on their own. */
@@ -64,6 +65,9 @@ export const list = query({
           lat !== undefined && lng !== undefined && d.pickupLat !== undefined && d.pickupLng !== undefined
             ? distanceKm(lat, lng, d.pickupLat, d.pickupLng)
             : null;
+        // Real chef-submitted photo, when one exists — imageIndex (a static
+        // placeholder asset) is the client-side fallback otherwise.
+        const photoUrl = await resolveUploadUrl(ctx, d.imageUploadId);
         return {
           ...d,
           chefName: chef?.name ?? null,
@@ -72,6 +76,7 @@ export const list = query({
           remaining: Math.max(0, d.inventory - d.currentOrders),
           distanceKm: distanceKm_,
           isFeatured: isFeaturedNow(d, now),
+          photoUrl,
         };
       }),
     );
@@ -220,6 +225,9 @@ export const create = mutation({
         description: args.description,
         mealSlot: args.mealSlot,
         imageIndex: args.imageIndex,
+        // A re-drop without a new photo keeps whatever real photo the dish
+        // already had — only an explicit new upload replaces it.
+        imageUploadId: args.imageUploadId ?? dish.imageUploadId,
         tags: args.tags,
         timesDropped: dish.timesDropped + 1,
         lastDroppedAt: now,
@@ -232,6 +240,7 @@ export const create = mutation({
         description: args.description,
         mealSlot: args.mealSlot,
         imageIndex: args.imageIndex,
+        imageUploadId: args.imageUploadId,
         tags: args.tags,
         timesDropped: 1,
         loveCount: 0,
@@ -256,6 +265,7 @@ export const create = mutation({
       pickupLng: location.lng,
       expiresAt: args.expiresAt,
       imageIndex: args.imageIndex,
+      imageUploadId: args.imageUploadId,
       tags: args.tags,
       isSecret: args.isSecret ?? false,
     });
@@ -269,7 +279,8 @@ export const get = query({
     const drop = await ctx.db.get(dropId);
     if (!drop) return null;
     const chef = await ctx.db.get(drop.chefId);
-    return { ...drop, chefName: chef?.name ?? null, remaining: Math.max(0, drop.inventory - drop.currentOrders) };
+    const photoUrl = await resolveUploadUrl(ctx, drop.imageUploadId);
+    return { ...drop, chefName: chef?.name ?? null, remaining: Math.max(0, drop.inventory - drop.currentOrders), photoUrl };
   },
 });
 

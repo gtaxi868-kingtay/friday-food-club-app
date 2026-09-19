@@ -140,7 +140,7 @@ function mapDrop(d: any): Drop {
     cuisine: 'Caribbean',
     mealSlot: d.mealSlot,
     imageIndex: d.imageIndex ?? 1,
-    imageUrl: null,
+    imageUrl: d.photoUrl ?? null,
     tags: d.tags ?? [],
     status: d.status,
     isSecret: d.isSecret ?? false,

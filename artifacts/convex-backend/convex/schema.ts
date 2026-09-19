@@ -74,6 +74,9 @@ export default defineSchema({
     description: v.string(),
     mealSlot: v.string(),
     imageIndex: v.number(),
+    // Real chef-submitted photo, once one's been uploaded — imageIndex
+    // stays as the fallback for dishes that never got a real photo.
+    imageUploadId: v.optional(v.id("uploads")),
     tags: v.array(v.string()),
     timesDropped: v.number(),
     loveCount: v.number(),
@@ -118,6 +121,7 @@ export default defineSchema({
     pickupLng: v.optional(v.number()),
     expiresAt: v.number(), // epoch ms
     imageIndex: v.number(),
+    imageUploadId: v.optional(v.id("uploads")),
     tags: v.array(v.string()),
     chefEarnings: v.optional(v.number()),
     isSecret: v.optional(v.boolean()),
